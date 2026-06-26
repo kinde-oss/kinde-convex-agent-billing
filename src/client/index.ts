@@ -31,6 +31,9 @@ export type UsageEvent = FunctionReturnType<
   ComponentApi['usage']['listForPrincipal']
 >[number];
 
+/** The outcome of a `check` gate decision. */
+export type GateResult = FunctionReturnType<ComponentApi['enforce']['check']>;
+
 /**
  * Options for the {@link AgentBilling} client. Empty for now — the provider and
  * `verifyCaller` slots arrive in later phases. Kept as an interface (rather than
@@ -61,6 +64,15 @@ export class AgentBilling {
     public readonly component: ComponentApi,
     public readonly options: AgentBillingOptions = {}
   ) {}
+
+  // --- Enforce ---
+
+  check(
+    ctx: RunMutationCtx,
+    args: FunctionArgs<ComponentApi['enforce']['check']>
+  ) {
+    return ctx.runMutation(this.component.enforce.check, args);
+  }
 
   // --- Meter ---
 

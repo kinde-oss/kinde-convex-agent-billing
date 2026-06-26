@@ -1,0 +1,130 @@
+import {v} from 'convex/values';
+import type {Infer} from 'convex/values';
+import {mutation} from './_generated/server.js';
+import {effectiveBudget, fail, writeAudit} from './helpers.js';
+import {
+  decisionValidator,
+  nullableNumber,
+  nullableString,
+  principalTypeValidator
+} from './validators.js';
+
+const gateResultValidator = v.object({
+  decision: decisionValidator,
+  reason: v.string(),
+  remaining: nullableNumber,
+  requested: v.number(),
+  correlationId: v.string()
+});
+
+type Decision = Infer<typeof decisionValidator>;
+
+/**
+ * The Enforce gate: an advisory, read-only billing decision. Gates run in
+ * precedence order and the first conclusive one short-circuits through the
+ * single `decide` helper, which writes exactly one `billing.decision` audit row
+ * carrying the correlationId returned to the caller (mirrors the auth
+ * component's I4: one decision row per call). The `reason` is always a stable,
+ * machine-readable code.
+ *
+ * gate.check NEVER mutates the budget — it reports a decision and audits it, but
+ * only `usage.record` decrements. Both read the same `effectiveBudget`, so they
+ * agree at a single instant (invariant): a request `check` calls `allow` will
+ * not be rejected by `record`'s budget check at that instant (record then
+ * enforces the decrement atomically), and a request `check` calls `deny`
+ * (exhausted) is the same request `record` rejects with `budget_exceeded`.
+ */
+export const check = mutation({
+  args: {
+    principalType: principalTypeValidator,
+    principalId: v.string(),
+    orgCode: v.optional(nullableString),
+    unit: v.string(),
+    requested: v.number(),
+    correlationId: v.optional(nullableString)
+  },
+  returns: gateResultValidator,
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const orgCode = args.orgCode ?? null;
+    const incomingCorrelationId = args.correlationId ?? null;
+
+    // One audit row per decision. All conclusive exits funnel through here.
+    const decide = async (
+      decision: Decision,
+      reason: string,
+      fields: {remaining: number | null}
+    ) => {
+      const correlationId = await writeAudit(ctx, {
+        eventType: 'billing.decision',
+        principalType: args.principalType,
+        principalId: args.principalId,
+        orgCode,
+        unit: args.unit,
+        decision,
+        correlationId: incomingCorrelationId,
+        detail: {
+          requested: args.requested,
+          remaining: fields.remaining,
+          reason
+        }
+      });
+      return {
+        decision,
+        reason,
+        remaining: fields.remaining,
+        requested: args.requested,
+        correlationId
+      };
+    };
+
+    // 1. A non-positive request is a contradictory argument, not a denial —
+    // reject it like the spine's invalid_quantity (HARDENING: do not coerce).
+    if (args.requested <= 0) {
+      fail('invalid_requested', 'requested must be greater than 0.');
+    }
+
+    // 2. The budget must exist.
+    const budget = await ctx.db
+      .query('budgets')
+      .withIndex('by_principal', (q) =>
+        q
+          .eq('principalType', args.principalType)
+          .eq('principalId', args.principalId)
+          .eq('unit', args.unit)
+      )
+      .unique();
+    if (budget === null) {
+      return await decide('deny', 'budget_not_found', {remaining: null});
+    }
+
+    // 3. Tenant isolation.
+    if (orgCode !== budget.orgCode) {
+      return await decide('deny', 'tenant_mismatch', {remaining: null});
+    }
+
+    // 4. Derive the live budget (read-only — a due local roll is reflected but
+    // never persisted, exactly like budgets.getEffective).
+    const eff = effectiveBudget(budget, now);
+
+    // 5. Enough headroom for the whole request → allow.
+    if (eff.remaining >= args.requested) {
+      return await decide('allow', 'within_budget', {
+        remaining: eff.remaining
+      });
+    }
+
+    // 6. Some budget remains, but less than requested → degrade. Not a hard
+    // deny: the caller may proceed at reduced scope or request less.
+    if (eff.remaining > 0) {
+      return await decide('degrade', 'insufficient_remaining', {
+        remaining: eff.remaining
+      });
+    }
+
+    // 7. Nothing left → deny.
+    return await decide('deny', 'budget_exhausted', {
+      remaining: eff.remaining
+    });
+  }
+});

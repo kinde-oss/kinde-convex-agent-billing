@@ -9,6 +9,7 @@
  */
 
 import type * as budgets from "../budgets.js";
+import type * as enforce from "../enforce.js";
 import type * as helpers from "../helpers.js";
 import type * as usage from "../usage.js";
 import type * as validators from "../validators.js";
@@ -22,6 +23,7 @@ import { anyApi, componentsGeneric } from "convex/server";
 
 const fullApi: ApiFromModules<{
   budgets: typeof budgets;
+  enforce: typeof enforce;
   helpers: typeof helpers;
   usage: typeof usage;
   validators: typeof validators;

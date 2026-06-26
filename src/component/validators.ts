@@ -17,6 +17,17 @@ export const usageStatusValidator = v.union(
 );
 
 /**
+ * A gate decision. Three-valued: `degrade` means some budget remains but less
+ * than requested, so the caller may proceed at reduced scope rather than being
+ * hard-denied.
+ */
+export const decisionValidator = v.union(
+  v.literal('allow'),
+  v.literal('deny'),
+  v.literal('degrade')
+);
+
+/**
  * Flat string-keyed metadata. Values are limited to primitives and string
  * arrays so the whole document stays fully typed (no `any` anywhere in the
  * generated types).

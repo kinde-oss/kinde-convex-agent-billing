@@ -86,6 +86,28 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         Name
       >;
     };
+    enforce: {
+      check: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          correlationId?: string | null;
+          orgCode?: string | null;
+          principalId: string;
+          principalType: "user" | "org" | "agent";
+          requested: number;
+          unit: string;
+        },
+        {
+          correlationId: string;
+          decision: "allow" | "deny" | "degrade";
+          reason: string;
+          remaining: number | null;
+          requested: number;
+        },
+        Name
+      >;
+    };
     usage: {
       getEvent: FunctionReference<
         "query",
