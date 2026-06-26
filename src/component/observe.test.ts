@@ -98,6 +98,7 @@ describe('usage.listForPrincipal', () => {
           quantity: 1,
           idempotencyKey: `k${at}`,
           correlationId: null,
+          mandateId: null,
           at
         });
       }
@@ -110,6 +111,7 @@ describe('usage.listForPrincipal', () => {
         quantity: 1,
         idempotencyKey: 'kb',
         correlationId: null,
+        mandateId: null,
         at: 5000
       });
     });

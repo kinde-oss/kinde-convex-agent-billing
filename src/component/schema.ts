@@ -40,10 +40,37 @@ export default defineSchema({
     quantity: v.number(),
     idempotencyKey: v.string(),
     correlationId: nullableString,
+    /** The mandate this spend was bound to, or null for an unbound record. */
+    mandateId: v.union(v.id('mandates'), v.null()),
     at: v.number()
   })
     .index('by_principal', ['principalType', 'principalId', 'at'])
     .index('by_org_code', ['orgCode', 'at']),
+
+  /**
+   * A spend mandate: HMAC-signed authority for an agent to spend up to
+   * `budgetCap` (running `budgetSpent`) of `unit` on behalf of a principal,
+   * within `[notBefore, notAfter)`. Verifiable without external calls.
+   * Revocation is the mutable `revokedAt` column (reactive: verify always
+   * consults it), mirroring a delegation's `revokedAt` — not a separate table.
+   */
+  mandates: defineTable({
+    principalType: principalTypeValidator,
+    principalId: v.string(),
+    orgCode: nullableString,
+    agentSubject: v.string(),
+    unit: v.string(),
+    scope: v.array(v.string()),
+    budgetCap: v.number(),
+    budgetSpent: v.number(),
+    notBefore: v.number(),
+    notAfter: v.number(),
+    revokedAt: nullableNumber,
+    signature: v.string(),
+    createdAt: v.number()
+  })
+    .index('by_principal', ['principalType', 'principalId'])
+    .index('by_agent', ['agentSubject']),
 
   /**
    * Idempotency overlay. One row per (scope, idempotencyKey) records the

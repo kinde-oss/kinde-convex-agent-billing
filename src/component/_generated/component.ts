@@ -108,6 +108,112 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         Name
       >;
     };
+    mandates: {
+      get: FunctionReference<
+        "query",
+        "internal",
+        { mandateId: string },
+        {
+          _creationTime: number;
+          _id: string;
+          agentSubject: string;
+          budgetCap: number;
+          budgetSpent: number;
+          createdAt: number;
+          notAfter: number;
+          notBefore: number;
+          orgCode: string | null;
+          principalId: string;
+          principalType: "user" | "org" | "agent";
+          revokedAt: number | null;
+          scope: Array<string>;
+          signature: string;
+          unit: string;
+        } | null,
+        Name
+      >;
+      listForAgent: FunctionReference<
+        "query",
+        "internal",
+        { agentSubject: string; limit?: number },
+        Array<{
+          _creationTime: number;
+          _id: string;
+          agentSubject: string;
+          budgetCap: number;
+          budgetSpent: number;
+          createdAt: number;
+          notAfter: number;
+          notBefore: number;
+          orgCode: string | null;
+          principalId: string;
+          principalType: "user" | "org" | "agent";
+          revokedAt: number | null;
+          scope: Array<string>;
+          signature: string;
+          unit: string;
+        }>,
+        Name
+      >;
+      listForPrincipal: FunctionReference<
+        "query",
+        "internal",
+        {
+          limit?: number;
+          principalId: string;
+          principalType: "user" | "org" | "agent";
+        },
+        Array<{
+          _creationTime: number;
+          _id: string;
+          agentSubject: string;
+          budgetCap: number;
+          budgetSpent: number;
+          createdAt: number;
+          notAfter: number;
+          notBefore: number;
+          orgCode: string | null;
+          principalId: string;
+          principalType: "user" | "org" | "agent";
+          revokedAt: number | null;
+          scope: Array<string>;
+          signature: string;
+          unit: string;
+        }>,
+        Name
+      >;
+      mint: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          agentSubject: string;
+          budgetCap: number;
+          notAfter: number;
+          notBefore?: number;
+          orgCode?: string | null;
+          principalId: string;
+          principalType: "user" | "org" | "agent";
+          scope: Array<string>;
+          unit: string;
+        },
+        string,
+        Name
+      >;
+      revoke: FunctionReference<
+        "mutation",
+        "internal",
+        { mandateId: string; reason?: string },
+        null,
+        Name
+      >;
+      verify: FunctionReference<
+        "query",
+        "internal",
+        { mandateId: string },
+        { valid: true } | { code: string; reason: string; valid: false },
+        Name
+      >;
+    };
     usage: {
       getEvent: FunctionReference<
         "query",
@@ -119,6 +225,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           at: number;
           correlationId: string | null;
           idempotencyKey: string;
+          mandateId: string | null;
           orgCode: string | null;
           principalId: string;
           principalType: "user" | "org" | "agent";
@@ -141,6 +248,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           at: number;
           correlationId: string | null;
           idempotencyKey: string;
+          mandateId: string | null;
           orgCode: string | null;
           principalId: string;
           principalType: "user" | "org" | "agent";
@@ -155,6 +263,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         {
           correlationId?: string | null;
           idempotencyKey: string;
+          mandateId?: string;
           orgCode?: string | null;
           principalId: string;
           principalType: "user" | "org" | "agent";

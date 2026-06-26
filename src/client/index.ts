@@ -34,6 +34,11 @@ export type UsageEvent = FunctionReturnType<
 /** The outcome of a `check` gate decision. */
 export type GateResult = FunctionReturnType<ComponentApi['enforce']['check']>;
 
+/** The result of verifying a mandate. */
+export type MandateVerifyResult = FunctionReturnType<
+  ComponentApi['mandates']['verify']
+>;
+
 /**
  * Options for the {@link AgentBilling} client. Empty for now — the provider and
  * `verifyCaller` slots arrive in later phases. Kept as an interface (rather than
@@ -72,6 +77,50 @@ export class AgentBilling {
     args: FunctionArgs<ComponentApi['enforce']['check']>
   ) {
     return ctx.runMutation(this.component.enforce.check, args);
+  }
+
+  // --- Delegate (mandates) ---
+
+  mintMandate(
+    ctx: RunMutationCtx,
+    args: FunctionArgs<ComponentApi['mandates']['mint']>
+  ) {
+    return ctx.runMutation(this.component.mandates.mint, args);
+  }
+
+  verifyMandate(
+    ctx: RunQueryCtx,
+    args: FunctionArgs<ComponentApi['mandates']['verify']>
+  ) {
+    return ctx.runQuery(this.component.mandates.verify, args);
+  }
+
+  revokeMandate(
+    ctx: RunMutationCtx,
+    args: FunctionArgs<ComponentApi['mandates']['revoke']>
+  ) {
+    return ctx.runMutation(this.component.mandates.revoke, args);
+  }
+
+  getMandate(
+    ctx: RunQueryCtx,
+    args: FunctionArgs<ComponentApi['mandates']['get']>
+  ) {
+    return ctx.runQuery(this.component.mandates.get, args);
+  }
+
+  listMandatesForPrincipal(
+    ctx: RunQueryCtx,
+    args: FunctionArgs<ComponentApi['mandates']['listForPrincipal']>
+  ) {
+    return ctx.runQuery(this.component.mandates.listForPrincipal, args);
+  }
+
+  listMandatesForAgent(
+    ctx: RunQueryCtx,
+    args: FunctionArgs<ComponentApi['mandates']['listForAgent']>
+  ) {
+    return ctx.runQuery(this.component.mandates.listForAgent, args);
   }
 
   // --- Meter ---

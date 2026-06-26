@@ -1,5 +1,9 @@
 import {defineComponent} from 'convex/server';
+import {v} from 'convex/values';
 
-// No env vars are declared yet. Billing environment variables (declared as
-// string or string-union types only) arrive in a later phase.
-export default defineComponent('agentBilling');
+export default defineComponent('agentBilling', {
+  env: {
+    /** Secret used to HMAC-sign mandates. Required. */
+    MANDATE_SIGNING_SECRET: v.string()
+  }
+});

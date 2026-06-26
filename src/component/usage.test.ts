@@ -1,9 +1,10 @@
-import {describe, expect, test} from 'vitest';
+import {afterEach, beforeEach, describe, expect, test, vi} from 'vitest';
 import type {Id} from './_generated/dataModel.js';
 import {api} from './_generated/api.js';
 import {expectFail, initConvexTest} from './setup.test.js';
 
 const HOUR = 60 * 60 * 1000;
+const MANDATE_SECRET = 'test-mandate-secret';
 
 type ConvexTest = ReturnType<typeof initConvexTest>;
 
@@ -47,6 +48,16 @@ async function remainingOf(t: ConvexTest): Promise<number | undefined> {
 }
 
 describe('usage.record — the spine', () => {
+  beforeEach(() => {
+    // HARDENING: stub every required env var, so the mandate-bound tests below
+    // can sign/verify. The no-mandate path never reads it.
+    vi.stubEnv('MANDATE_SIGNING_SECRET', MANDATE_SECRET);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   test('applied: decrements once and writes exactly one of each row', async () => {
     const t = initConvexTest();
     await setBudget(t, 100);
@@ -298,5 +309,171 @@ describe('usage.record — the spine', () => {
     expect(budget?.remaining).toBe(40);
     expect(budget?.periodStart).toBe(periodStart);
     expect(budget?.periodEnd).toBe(periodEnd);
+  });
+
+  // --- Mandate binding (Phase 4) ---
+
+  async function mintMandate(
+    t: ConvexTest,
+    budgetCap: number,
+    overrides: {principalId?: string; unit?: string} = {}
+  ): Promise<Id<'mandates'>> {
+    return await t.mutation(api.mandates.mint, {
+      principalType: 'user',
+      principalId: overrides.principalId ?? 'user_alice',
+      agentSubject: 'agent_bot',
+      unit: overrides.unit ?? 'tokens',
+      scope: ['chat.completions'],
+      budgetCap,
+      notAfter: Date.now() + HOUR
+    });
+  }
+
+  test('record under a mandate decrements both the budget and the mandate', async () => {
+    const t = initConvexTest();
+    await setBudget(t, 100);
+    const mandateId = await mintMandate(t, 50);
+
+    const result = await t.mutation(api.usage.record, {
+      principalType: 'user',
+      principalId: 'user_alice',
+      unit: 'tokens',
+      quantity: 20,
+      idempotencyKey: 'k1',
+      mandateId
+    });
+    expect(result.status).toBe('applied');
+    expect(result.remaining).toBe(80);
+
+    const mandate = await t.query(api.mandates.get, {mandateId});
+    expect(mandate?.budgetSpent).toBe(20);
+
+    const event = await t.query(api.usage.getEvent, {
+      usageEventId: result.usageEventId
+    });
+    expect(event?.mandateId).toBe(mandateId);
+  });
+
+  test('a record over the mandate remaining (within the principal budget) fails mandate_budget_exceeded and writes nothing', async () => {
+    const t = initConvexTest();
+    await setBudget(t, 1000); // principal budget has plenty
+    const mandateId = await mintMandate(t, 30); // mandate caps spend at 30
+
+    await t.mutation(api.usage.record, {
+      principalType: 'user',
+      principalId: 'user_alice',
+      unit: 'tokens',
+      quantity: 20,
+      idempotencyKey: 'k1',
+      mandateId
+    });
+    // 20 more would exceed the mandate's remaining (30 - 20 = 10), even though
+    // the principal budget still has 980.
+    await expectFail(
+      t.mutation(api.usage.record, {
+        principalType: 'user',
+        principalId: 'user_alice',
+        unit: 'tokens',
+        quantity: 20,
+        idempotencyKey: 'k2',
+        mandateId
+      }),
+      'mandate_budget_exceeded'
+    );
+
+    expect(await remainingOf(t)).toBe(980);
+    const mandate = await t.query(api.mandates.get, {mandateId});
+    expect(mandate?.budgetSpent).toBe(20);
+    expect(await counts(t)).toEqual({
+      usageEvents: 1,
+      idempotencyKeys: 1,
+      recorded: 1
+    });
+  });
+
+  test('revoking the mandate makes the next record fail mandate_revoked (reactive), budget untouched', async () => {
+    const t = initConvexTest();
+    await setBudget(t, 1000);
+    const mandateId = await mintMandate(t, 100);
+
+    await t.mutation(api.usage.record, {
+      principalType: 'user',
+      principalId: 'user_alice',
+      unit: 'tokens',
+      quantity: 10,
+      idempotencyKey: 'k1',
+      mandateId
+    });
+    await t.mutation(api.mandates.revoke, {mandateId});
+
+    await expectFail(
+      t.mutation(api.usage.record, {
+        principalType: 'user',
+        principalId: 'user_alice',
+        unit: 'tokens',
+        quantity: 10,
+        idempotencyKey: 'k2',
+        mandateId
+      }),
+      'mandate_revoked'
+    );
+    // Only the first spend went through.
+    expect(await remainingOf(t)).toBe(990);
+  });
+
+  test('mandate principal mismatch fails', async () => {
+    const t = initConvexTest();
+    await setBudget(t, 100);
+    const mandateId = await mintMandate(t, 50, {principalId: 'user_bob'});
+
+    await expectFail(
+      t.mutation(api.usage.record, {
+        principalType: 'user',
+        principalId: 'user_alice',
+        unit: 'tokens',
+        quantity: 10,
+        idempotencyKey: 'k1',
+        mandateId
+      }),
+      'mandate_principal_mismatch'
+    );
+  });
+
+  test('mandate unit mismatch fails', async () => {
+    const t = initConvexTest();
+    await setBudget(t, 100);
+    const mandateId = await mintMandate(t, 50, {unit: 'images'});
+
+    await expectFail(
+      t.mutation(api.usage.record, {
+        principalType: 'user',
+        principalId: 'user_alice',
+        unit: 'tokens',
+        quantity: 10,
+        idempotencyKey: 'k1',
+        mandateId
+      }),
+      'mandate_unit_mismatch'
+    );
+  });
+
+  test('regression: record without a mandateId behaves as before and stores null mandateId', async () => {
+    const t = initConvexTest();
+    await setBudget(t, 100);
+
+    const result = await t.mutation(api.usage.record, {
+      principalType: 'user',
+      principalId: 'user_alice',
+      unit: 'tokens',
+      quantity: 10,
+      idempotencyKey: 'k1'
+    });
+    expect(result.status).toBe('applied');
+    expect(result.remaining).toBe(90);
+
+    const event = await t.query(api.usage.getEvent, {
+      usageEventId: result.usageEventId
+    });
+    expect(event?.mandateId).toBeNull();
   });
 });

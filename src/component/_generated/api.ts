@@ -11,6 +11,7 @@
 import type * as budgets from "../budgets.js";
 import type * as enforce from "../enforce.js";
 import type * as helpers from "../helpers.js";
+import type * as mandates from "../mandates.js";
 import type * as usage from "../usage.js";
 import type * as validators from "../validators.js";
 
@@ -25,6 +26,7 @@ const fullApi: ApiFromModules<{
   budgets: typeof budgets;
   enforce: typeof enforce;
   helpers: typeof helpers;
+  mandates: typeof mandates;
   usage: typeof usage;
   validators: typeof validators;
 }> = anyApi as any;
