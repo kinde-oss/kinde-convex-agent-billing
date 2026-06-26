@@ -44,7 +44,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           principalId: string;
           principalType: "user" | "org" | "agent";
           remaining: number;
-          source: "local" | "provider";
+          source: "local" | "kinde";
           unit: string;
         } | null,
         Name
@@ -63,7 +63,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           periodStart: number | null;
           remaining: number;
           rolled: boolean;
-          source: "local" | "provider";
+          source: "local" | "kinde";
           unit: string;
         } | null,
         Name

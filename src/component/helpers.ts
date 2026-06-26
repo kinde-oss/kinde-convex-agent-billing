@@ -59,9 +59,9 @@ export interface EffectiveBudget {
 /**
  * The budget as it behaves right now, derived on read without mutating the
  * stored row (invariant: a stale local window resets exactly when it elapses,
- * and a provider budget is never advanced by this component).
+ * and a Kinde budget is never advanced by this component).
  *
- * A `provider` budget is the external source of truth, so its stored
+ * A `kinde` budget is the external source of truth, so its stored
  * `{remaining, periodStart, periodEnd}` are returned unchanged with
  * `rolled:false`. A `local` budget with a complete, recurring window
  * (`periodCap`, `periodLengthMs`, `periodStart`, `periodEnd` all set) whose

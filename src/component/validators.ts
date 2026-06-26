@@ -8,7 +8,7 @@ export const principalTypeValidator = v.union(
 
 export const budgetSourceValidator = v.union(
   v.literal('local'),
-  v.literal('provider')
+  v.literal('kinde')
 );
 
 export const usageStatusValidator = v.union(

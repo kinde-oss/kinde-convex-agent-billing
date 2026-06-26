@@ -260,12 +260,12 @@ describe('usage.record — the spine', () => {
     expect(budget?.periodStart ?? 0).toBeGreaterThan(now - 2 * HOUR);
   });
 
-  test('provider no-roll: an elapsed provider window is never reset', async () => {
+  test('kinde no-roll: an elapsed Kinde window is never reset', async () => {
     const t = initConvexTest();
     const now = Date.now();
     const periodStart = now - 3 * HOUR;
     const periodEnd = now - 2 * HOUR;
-    // Insert a provider budget directly: it is the external source of truth.
+    // Insert a Kinde budget directly: it is the external source of truth.
     const budgetId: Id<'budgets'> = await t.run(async (ctx) =>
       ctx.db.insert('budgets', {
         principalType: 'user',
@@ -277,7 +277,7 @@ describe('usage.record — the spine', () => {
         periodStart,
         periodEnd,
         periodLengthMs: HOUR,
-        source: 'provider',
+        source: 'kinde',
         createdAt: now
       })
     );

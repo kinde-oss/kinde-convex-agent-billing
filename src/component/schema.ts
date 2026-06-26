@@ -11,7 +11,7 @@ import {
 export default defineSchema({
   /**
    * One spendable budget per (principalType, principalId, unit). A `local`
-   * budget is owned and advanced by this component; a `provider` budget mirrors
+   * budget is owned and advanced by this component; a `kinde` budget mirrors
    * an external source of truth that the component never resets (see
    * `effectiveBudget`).
    */

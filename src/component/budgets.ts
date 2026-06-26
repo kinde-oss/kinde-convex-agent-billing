@@ -17,7 +17,7 @@ const budgetDoc = schema.tables.budgets.validator.extend({
 
 /**
  * Upsert a LOCAL budget for (principalType, principalId, unit). `source` is
- * always forced to `local`; provider budgets are mirrored in by other code
+ * always forced to `local`; Kinde budgets are mirrored in by other code
  * paths, never through this mutation. HARDENING guards reject malformed inputs
  * rather than coercing them.
  */
@@ -152,7 +152,7 @@ export const get = query({
 /**
  * Read-only counterpart to the spine's internal use of `effectiveBudget`:
  * report what `remaining` is RIGHT NOW. A local budget reflects a due rollover
- * (remaining reset to `periodCap`, `rolled:true`); a provider budget reflects
+ * (remaining reset to `periodCap`, `rolled:true`); a Kinde budget reflects
  * its stored state (`rolled:false`). This query mutates nothing — it never
  * patches the stored row, so a caller can observe a pending roll without
  * materializing it.

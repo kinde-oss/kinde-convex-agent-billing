@@ -42,7 +42,7 @@ describe('budgets.getEffective', () => {
     expect(stored?.periodEnd).toBe(now - 2 * HOUR);
   });
 
-  test('a provider budget with an elapsed window reports stored state, rolled:false', async () => {
+  test('a Kinde budget with an elapsed window reports stored state, rolled:false', async () => {
     const t: ConvexTest = initConvexTest();
     const now = Date.now();
     const periodStart = now - 3 * HOUR;
@@ -58,7 +58,7 @@ describe('budgets.getEffective', () => {
         periodStart,
         periodEnd,
         periodLengthMs: HOUR,
-        source: 'provider',
+        source: 'kinde',
         createdAt: now
       })
     );
@@ -71,7 +71,7 @@ describe('budgets.getEffective', () => {
     expect(eff?.rolled).toBe(false);
     expect(eff?.remaining).toBe(50);
     expect(eff?.periodEnd).toBe(periodEnd);
-    expect(eff?.source).toBe('provider');
+    expect(eff?.source).toBe('kinde');
   });
 
   test('returns null for a missing budget', async () => {
