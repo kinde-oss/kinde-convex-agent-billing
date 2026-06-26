@@ -23,3 +23,25 @@ coverage/
 
 # ---------------------------------------------------------------------
 # Add specific rules here…
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# npm pack output
+*.tgz
+
+# ESLint cache
+.eslintcache
+
+# Convex local state
+.env.local
+.convex/
+
+# Claude Code local config
+.claude/
+
+# Convex AI tooling (local only, not part of the component)
+AGENTS.md
+CLAUDE.md
+.agents/
+skills-lock.json
