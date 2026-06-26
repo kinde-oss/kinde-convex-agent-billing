@@ -8,6 +8,11 @@
  * @module
  */
 
+import type * as budgets from "../budgets.js";
+import type * as helpers from "../helpers.js";
+import type * as usage from "../usage.js";
+import type * as validators from "../validators.js";
+
 import type {
   ApiFromModules,
   FilterApi,
@@ -15,7 +20,12 @@ import type {
 } from "convex/server";
 import { anyApi, componentsGeneric } from "convex/server";
 
-const fullApi: ApiFromModules<{}> = anyApi as any;
+const fullApi: ApiFromModules<{
+  budgets: typeof budgets;
+  helpers: typeof helpers;
+  usage: typeof usage;
+  validators: typeof validators;
+}> = anyApi as any;
 
 /**
  * A utility for referencing Convex functions in your app's public API.

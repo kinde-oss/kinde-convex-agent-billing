@@ -22,4 +22,88 @@ import type { FunctionReference } from "convex/server";
  * ```
  */
 export type ComponentApi<Name extends string | undefined = string | undefined> =
-  {};
+  {
+    budgets: {
+      get: FunctionReference<
+        "query",
+        "internal",
+        {
+          principalId: string;
+          principalType: "user" | "org" | "agent";
+          unit: string;
+        },
+        {
+          _creationTime: number;
+          _id: string;
+          createdAt: number;
+          orgCode: string | null;
+          periodCap: number | null;
+          periodEnd: number | null;
+          periodLengthMs: number | null;
+          periodStart: number | null;
+          principalId: string;
+          principalType: "user" | "org" | "agent";
+          remaining: number;
+          source: "local" | "provider";
+          unit: string;
+        } | null,
+        Name
+      >;
+      set: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          orgCode?: string | null;
+          periodCap?: number | null;
+          periodEnd?: number | null;
+          periodLengthMs?: number | null;
+          periodStart?: number | null;
+          principalId: string;
+          principalType: "user" | "org" | "agent";
+          remaining: number;
+          unit: string;
+        },
+        string,
+        Name
+      >;
+    };
+    usage: {
+      getEvent: FunctionReference<
+        "query",
+        "internal",
+        { usageEventId: string },
+        {
+          _creationTime: number;
+          _id: string;
+          at: number;
+          correlationId: string | null;
+          idempotencyKey: string;
+          orgCode: string | null;
+          principalId: string;
+          principalType: "user" | "org" | "agent";
+          quantity: number;
+          unit: string;
+        } | null,
+        Name
+      >;
+      record: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          correlationId?: string | null;
+          idempotencyKey: string;
+          orgCode?: string | null;
+          principalId: string;
+          principalType: "user" | "org" | "agent";
+          quantity: number;
+          unit: string;
+        },
+        {
+          remaining: number;
+          status: "applied" | "deduplicated";
+          usageEventId: string;
+        },
+        Name
+      >;
+    };
+  };
