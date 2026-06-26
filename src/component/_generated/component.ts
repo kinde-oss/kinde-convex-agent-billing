@@ -49,6 +49,25 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         } | null,
         Name
       >;
+      getEffective: FunctionReference<
+        "query",
+        "internal",
+        {
+          principalId: string;
+          principalType: "user" | "org" | "agent";
+          unit: string;
+        },
+        {
+          periodCap: number | null;
+          periodEnd: number | null;
+          periodStart: number | null;
+          remaining: number;
+          rolled: boolean;
+          source: "local" | "provider";
+          unit: string;
+        } | null,
+        Name
+      >;
       set: FunctionReference<
         "mutation",
         "internal",
@@ -84,6 +103,28 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           quantity: number;
           unit: string;
         } | null,
+        Name
+      >;
+      listForPrincipal: FunctionReference<
+        "query",
+        "internal",
+        {
+          limit?: number;
+          principalId: string;
+          principalType: "user" | "org" | "agent";
+        },
+        Array<{
+          _creationTime: number;
+          _id: string;
+          at: number;
+          correlationId: string | null;
+          idempotencyKey: string;
+          orgCode: string | null;
+          principalId: string;
+          principalType: "user" | "org" | "agent";
+          quantity: number;
+          unit: string;
+        }>,
         Name
       >;
       record: FunctionReference<

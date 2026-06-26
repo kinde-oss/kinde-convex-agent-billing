@@ -166,3 +166,29 @@ export const getEvent = query({
     return await ctx.db.get('usageEvents', args.usageEventId);
   }
 });
+
+/**
+ * The most recent usage events for a principal, newest first. The principal
+ * identity already scopes the rows, so no orgCode filter is needed. `limit` is
+ * clamped to [1, 200].
+ */
+export const listForPrincipal = query({
+  args: {
+    principalType: principalTypeValidator,
+    principalId: v.string(),
+    limit: v.optional(v.number())
+  },
+  returns: v.array(usageEventDoc),
+  handler: async (ctx, args) => {
+    const limit = Math.min(Math.max(args.limit ?? 100, 1), 200);
+    return await ctx.db
+      .query('usageEvents')
+      .withIndex('by_principal', (q) =>
+        q
+          .eq('principalType', args.principalType)
+          .eq('principalId', args.principalId)
+      )
+      .order('desc')
+      .take(limit);
+  }
+});

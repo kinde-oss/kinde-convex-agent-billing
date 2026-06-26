@@ -2,8 +2,9 @@ import {v} from 'convex/values';
 import {mutation, query} from './_generated/server.js';
 import type {Id} from './_generated/dataModel.js';
 import schema from './schema.js';
-import {fail, writeAudit} from './helpers.js';
+import {effectiveBudget, fail, writeAudit} from './helpers.js';
 import {
+  budgetSourceValidator,
   nullableNumber,
   nullableString,
   principalTypeValidator
@@ -145,5 +146,57 @@ export const get = query({
           .eq('unit', args.unit)
       )
       .unique();
+  }
+});
+
+/**
+ * Read-only counterpart to the spine's internal use of `effectiveBudget`:
+ * report what `remaining` is RIGHT NOW. A local budget reflects a due rollover
+ * (remaining reset to `periodCap`, `rolled:true`); a provider budget reflects
+ * its stored state (`rolled:false`). This query mutates nothing — it never
+ * patches the stored row, so a caller can observe a pending roll without
+ * materializing it.
+ */
+export const getEffective = query({
+  args: {
+    principalType: principalTypeValidator,
+    principalId: v.string(),
+    unit: v.string()
+  },
+  returns: v.union(
+    v.object({
+      remaining: v.number(),
+      periodStart: nullableNumber,
+      periodEnd: nullableNumber,
+      periodCap: nullableNumber,
+      unit: v.string(),
+      source: budgetSourceValidator,
+      rolled: v.boolean()
+    }),
+    v.null()
+  ),
+  handler: async (ctx, args) => {
+    const budget = await ctx.db
+      .query('budgets')
+      .withIndex('by_principal', (q) =>
+        q
+          .eq('principalType', args.principalType)
+          .eq('principalId', args.principalId)
+          .eq('unit', args.unit)
+      )
+      .unique();
+    if (budget === null) {
+      return null;
+    }
+    const eff = effectiveBudget(budget, Date.now());
+    return {
+      remaining: eff.remaining,
+      periodStart: eff.periodStart,
+      periodEnd: eff.periodEnd,
+      periodCap: budget.periodCap,
+      unit: budget.unit,
+      source: budget.source,
+      rolled: eff.rolled
+    };
   }
 });
