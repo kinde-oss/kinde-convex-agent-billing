@@ -23,6 +23,51 @@ import type { FunctionReference } from "convex/server";
  */
 export type ComponentApi<Name extends string | undefined = string | undefined> =
   {
+    audit: {
+      query: FunctionReference<
+        "query",
+        "internal",
+        {
+          endAt?: number;
+          eventType?: string;
+          orgCode?: string;
+          paginationOpts: {
+            cursor: string | null;
+            endCursor?: string | null;
+            id?: number;
+            maximumBytesRead?: number;
+            maximumRowsRead?: number;
+            numItems: number;
+          };
+          principalId?: string;
+          principalType?: "user" | "org" | "agent";
+          startAt?: number;
+        },
+        {
+          continueCursor: string;
+          isDone: boolean;
+          page: Array<{
+            _creationTime: number;
+            _id: string;
+            at: number;
+            correlationId: string | null;
+            decision: string | null;
+            detail: Record<
+              string,
+              string | number | boolean | null | Array<string>
+            >;
+            eventType: string;
+            orgCode: string | null;
+            principalId: string | null;
+            principalType: "user" | "org" | "agent" | null;
+            unit: string | null;
+          }>;
+          pageStatus?: "SplitRecommended" | "SplitRequired" | null;
+          splitCursor?: string | null;
+        },
+        Name
+      >;
+    };
     budgets: {
       get: FunctionReference<
         "query",

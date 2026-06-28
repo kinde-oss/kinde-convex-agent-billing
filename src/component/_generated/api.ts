@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as audit from "../audit.js";
 import type * as budgets from "../budgets.js";
 import type * as enforce from "../enforce.js";
 import type * as helpers from "../helpers.js";
@@ -26,6 +27,7 @@ import type {
 import { anyApi, componentsGeneric } from "convex/server";
 
 const fullApi: ApiFromModules<{
+  audit: typeof audit;
   budgets: typeof budgets;
   enforce: typeof enforce;
   helpers: typeof helpers;
