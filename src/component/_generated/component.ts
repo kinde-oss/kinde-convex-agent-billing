@@ -161,6 +161,21 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         { found: boolean; limit: number | null; remaining: number | null },
         Name
       >;
+      verifyWebhook: FunctionReference<
+        "action",
+        "internal",
+        { token: string },
+        {
+          customerId: string | null;
+          dedupKey: string;
+          payload: Record<
+            string,
+            string | number | boolean | null | Array<string>
+          >;
+          rawType: string;
+        },
+        Name
+      >;
     };
     mandates: {
       get: FunctionReference<
@@ -475,6 +490,93 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           status: "applied" | "deduplicated";
           usageEventId: string;
         },
+        Name
+      >;
+    };
+    webhooks: {
+      get: FunctionReference<
+        "query",
+        "internal",
+        { eventId: string },
+        {
+          _creationTime: number;
+          _id: string;
+          customerId: string | null;
+          dedupKey: string;
+          eventType: string;
+          payload: Record<
+            string,
+            string | number | boolean | null | Array<string>
+          >;
+          principalId: string | null;
+          principalType: "user" | "org" | "agent" | null;
+          processedAt: number | null;
+          rawType: string;
+          receivedAt: number;
+        } | null,
+        Name
+      >;
+      listForPrincipal: FunctionReference<
+        "query",
+        "internal",
+        {
+          eventType?: string;
+          limit?: number;
+          principalId: string;
+          principalType: "user" | "org" | "agent";
+        },
+        Array<{
+          _creationTime: number;
+          _id: string;
+          customerId: string | null;
+          dedupKey: string;
+          eventType: string;
+          payload: Record<
+            string,
+            string | number | boolean | null | Array<string>
+          >;
+          principalId: string | null;
+          principalType: "user" | "org" | "agent" | null;
+          processedAt: number | null;
+          rawType: string;
+          receivedAt: number;
+        }>,
+        Name
+      >;
+      listRecent: FunctionReference<
+        "query",
+        "internal",
+        { eventType?: string; limit?: number },
+        Array<{
+          _creationTime: number;
+          _id: string;
+          customerId: string | null;
+          dedupKey: string;
+          eventType: string;
+          payload: Record<
+            string,
+            string | number | boolean | null | Array<string>
+          >;
+          principalId: string | null;
+          principalType: "user" | "org" | "agent" | null;
+          processedAt: number | null;
+          rawType: string;
+          receivedAt: number;
+        }>,
+        Name
+      >;
+      markProcessed: FunctionReference<
+        "mutation",
+        "internal",
+        { eventId: string },
+        null,
+        Name
+      >;
+      receive: FunctionReference<
+        "action",
+        "internal",
+        { token: string },
+        { id: string; status: "ingested" | "duplicate" },
         Name
       >;
     };

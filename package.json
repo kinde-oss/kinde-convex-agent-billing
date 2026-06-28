@@ -58,8 +58,7 @@
     }
   },
   "dependencies": {
-    "convex-helpers": "^0.1.104",
-    "jose": "^6.0.0"
+    "convex-helpers": "^0.1.104"
   },
   "peerDependencies": {
     "convex": "^1.41.0"
@@ -74,6 +73,7 @@
     "convex-test": "^0.0.53",
     "eslint": "9.39.4",
     "globals": "^17.5.0",
+    "jose": "^6.0.0",
     "prettier": "3.8.3",
     "typescript": "6.0.3",
     "typescript-eslint": "8.58.2",

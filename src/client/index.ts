@@ -7,6 +7,8 @@ import type {
 import type {ComponentApi} from '../component/_generated/component.js';
 
 export type {ComponentApi} from '../component/_generated/component.js';
+export {registerRoutes} from './http.js';
+export type {RegisterRoutesOptions} from './http.js';
 
 export type RunQueryCtx = Pick<GenericActionCtx<GenericDataModel>, 'runQuery'>;
 export type RunMutationCtx = Pick<
@@ -63,6 +65,11 @@ export type TransactionResult = FunctionReturnType<
 export type ExecuteResult = FunctionReturnType<
   ComponentApi['transact']['execute']
 >;
+
+/** A normalized, ingested Kinde billing webhook event. */
+export type WebhookEvent = FunctionReturnType<
+  ComponentApi['webhooks']['listRecent']
+>[number];
 
 /**
  * Options for the {@link AgentBilling} client. Empty for now — the provider and
@@ -282,5 +289,21 @@ export class AgentBilling {
     args: FunctionArgs<ComponentApi['transact']['setPolicy']>
   ) {
     return ctx.runMutation(this.component.transact.setPolicy, args);
+  }
+
+  // --- Webhooks (ingestion is via the app-mounted HTTP route) ---
+
+  getWebhookEvent(
+    ctx: RunQueryCtx,
+    args: FunctionArgs<ComponentApi['webhooks']['get']>
+  ) {
+    return ctx.runQuery(this.component.webhooks.get, args);
+  }
+
+  listWebhookEvents(
+    ctx: RunQueryCtx,
+    args: FunctionArgs<ComponentApi['webhooks']['listForPrincipal']>
+  ) {
+    return ctx.runQuery(this.component.webhooks.listForPrincipal, args);
   }
 }

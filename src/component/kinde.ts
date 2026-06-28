@@ -12,6 +12,7 @@ import {internal} from './_generated/api.js';
 import schema from './schema.js';
 import {fail, writeAudit} from './helpers.js';
 import {
+  metadataValidator,
   nullableNumber,
   nullableString,
   principalTypeValidator
@@ -664,5 +665,200 @@ export const changePlan = action({
       customerId: mapping.customerId
     });
     return {changed: true};
+  }
+});
+
+// --- Webhook JWT verification (billing's own; does NOT import the auth pkg) ---
+
+interface VerifyJwk {
+  kid: string;
+  n: string;
+  e: string;
+}
+
+/** Narrow an untrusted JWKS value to the RSA keys usable for verification. */
+function toVerifyJwks(value: unknown): VerifyJwk[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const keys: VerifyJwk[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'object' || entry === null) {
+      return null;
+    }
+    const kid = field(entry, 'kid');
+    const n = field(entry, 'n');
+    const e = field(entry, 'e');
+    if (
+      typeof kid === 'string' &&
+      typeof n === 'string' &&
+      typeof e === 'string'
+    ) {
+      keys.push({kid, n, e});
+    }
+  }
+  return keys;
+}
+
+/** Decode a base64url segment to ArrayBuffer-backed bytes (no blind casts). */
+function base64UrlToBytes(segment: string): Uint8Array<ArrayBuffer> {
+  const b64 = segment.replace(/-/g, '+').replace(/_/g, '/');
+  const padded =
+    b64.length % 4 === 0 ? b64 : b64 + '='.repeat(4 - (b64.length % 4));
+  const binary = atob(padded);
+  const bytes = new Uint8Array(new ArrayBuffer(binary.length));
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function base64UrlToString(segment: string): string {
+  return new TextDecoder().decode(base64UrlToBytes(segment));
+}
+
+/** UTF-8 encode to ArrayBuffer-backed bytes for Web Crypto BufferSource args. */
+function utf8Bytes(text: string): Uint8Array<ArrayBuffer> {
+  const encoded = new TextEncoder().encode(text);
+  const bytes = new Uint8Array(new ArrayBuffer(encoded.length));
+  bytes.set(encoded);
+  return bytes;
+}
+
+/** Fetch the Kinde JWKS for the configured issuer (tests stub this endpoint). */
+async function fetchJwks(issuerUrl: string): Promise<VerifyJwk[]> {
+  const url = `${issuerUrl}/.well-known/jwks`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    fail(
+      'kinde_jwks_fetch_failed',
+      `Fetching ${url} failed with status ${response.status}.`
+    );
+  }
+  const json = await readJson(response, url, 'kinde_response_malformed');
+  const keys =
+    typeof json === 'object' && json !== null && 'keys' in json
+      ? toVerifyJwks(field(json, 'keys'))
+      : null;
+  if (keys === null) {
+    fail(
+      'kinde_response_malformed',
+      `The JWKS at ${url} is not a valid key set.`
+    );
+  }
+  return keys;
+}
+
+/**
+ * Verify a Kinde-signed webhook JWT against the JWKS and return its claims.
+ * Integrity is checked before content (mirrors mandate verification): the token
+ * is parsed, the signing key is found by `kid`, the RS256 signature is verified,
+ * and only then are the claims decoded. Throws a typed failure on any problem.
+ */
+async function verifyJwt(token: string, jwks: VerifyJwk[]): Promise<object> {
+  const segments = token.split('.');
+  if (segments.length !== 3) {
+    fail('webhook_malformed', 'The webhook body is not a well-formed JWT.');
+  }
+  const [headerB64, payloadB64, signatureB64] = segments;
+  let header: unknown;
+  try {
+    header = JSON.parse(base64UrlToString(headerB64));
+  } catch {
+    fail('webhook_malformed', 'The JWT header is not valid JSON.');
+  }
+  if (typeof header !== 'object' || header === null) {
+    fail('webhook_malformed', 'The JWT header is not an object.');
+  }
+  const alg = field(header, 'alg');
+  const kid = field(header, 'kid');
+  if (alg !== 'RS256') {
+    fail('webhook_unverified', 'Only RS256 webhook JWTs are accepted.');
+  }
+  if (typeof kid !== 'string') {
+    fail('webhook_unverified', 'The JWT header has no key id.');
+  }
+  const jwk = jwks.find((key) => key.kid === kid);
+  if (jwk === undefined) {
+    fail('webhook_unknown_kid', `No JWKS key matches kid "${kid}".`);
+  }
+  const cryptoKey = await crypto.subtle.importKey(
+    'jwk',
+    {kty: 'RSA', n: jwk.n, e: jwk.e, alg: 'RS256', ext: true},
+    {name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256'},
+    false,
+    ['verify']
+  );
+  const valid = await crypto.subtle.verify(
+    'RSASSA-PKCS1-v1_5',
+    cryptoKey,
+    base64UrlToBytes(signatureB64),
+    utf8Bytes(`${headerB64}.${payloadB64}`)
+  );
+  if (!valid) {
+    fail('webhook_bad_signature', 'The webhook JWT signature is invalid.');
+  }
+  let payload: unknown;
+  try {
+    payload = JSON.parse(base64UrlToString(payloadB64));
+  } catch {
+    fail('webhook_malformed', 'The JWT payload is not valid JSON.');
+  }
+  if (typeof payload !== 'object' || payload === null) {
+    fail('webhook_malformed', 'The JWT payload is not an object.');
+  }
+  return payload;
+}
+
+/** Pull the customer id out of verified webhook claims, or null. */
+function extractCustomerId(claims: object): string | null {
+  const data = field(claims, 'data');
+  if (typeof data === 'object' && data !== null) {
+    const customer = field(data, 'customer');
+    if (typeof customer === 'object' && customer !== null) {
+      const id = field(customer, 'id');
+      if (typeof id === 'string') {
+        return id;
+      }
+    }
+  }
+  const top = field(claims, 'customer_id');
+  return typeof top === 'string' ? top : null;
+}
+
+/**
+ * Verify a Kinde webhook JWT against the issuer's JWKS and return its narrowed
+ * fields. This is WEBHOOK AUTHENTICITY (auth concern (a)): the body itself is a
+ * Kinde-signed JWT, so there is no bearer header and no verifyCaller here. Runs
+ * as a component action because it reads the component's own KINDE_ISSUER_URL
+ * env and fetches the JWKS — it never touches `ctx.auth` or the app env.
+ */
+export const verifyWebhook = action({
+  args: {token: v.string()},
+  returns: v.object({
+    rawType: v.string(),
+    dedupKey: v.string(),
+    customerId: nullableString,
+    payload: metadataValidator
+  }),
+  handler: async (ctx, args) => {
+    const issuerUrl = requireIssuerUrl();
+    const jwks = await fetchJwks(issuerUrl);
+    const claims = await verifyJwt(args.token, jwks);
+    const rawType = field(claims, 'type');
+    const dedupKey = field(claims, 'jti');
+    if (typeof rawType !== 'string') {
+      fail('webhook_malformed', 'The webhook JWT has no string "type" claim.');
+    }
+    if (typeof dedupKey !== 'string') {
+      fail('webhook_malformed', 'The webhook JWT has no string "jti" claim.');
+    }
+    const customerId = extractCustomerId(claims);
+    return {
+      rawType,
+      dedupKey,
+      customerId,
+      payload: {rawType, dedupKey, customerId}
+    };
   }
 });

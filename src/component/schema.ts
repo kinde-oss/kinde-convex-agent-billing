@@ -68,7 +68,9 @@ export default defineSchema({
     principalId: v.string(),
     customerId: v.string(),
     customerAgreementId: nullableString
-  }).index('by_principal', ['principalType', 'principalId']),
+  })
+    .index('by_principal', ['principalType', 'principalId'])
+    .index('by_customer', ['customerId']),
 
   /**
    * A spend mandate: HMAC-signed authority for an agent to spend up to
@@ -168,5 +170,26 @@ export default defineSchema({
     periodEnd: nullableNumber,
     periodLengthMs: nullableNumber,
     requireApproval: v.boolean()
-  }).index('by_principal', ['principalType', 'principalId'])
+  }).index('by_principal', ['principalType', 'principalId']),
+
+  /**
+   * Ingested Kinde billing webhook events (the eight `customer.*` triggers).
+   * Each row is the verified, normalized claims of one signed JWT. `dedupKey`
+   * (the JWT `jti`) makes a Kinde retry idempotent. The app subscribes to the
+   * list/get queries to react to billing events.
+   */
+  webhookEvents: defineTable({
+    eventType: v.string(),
+    rawType: v.string(),
+    dedupKey: v.string(),
+    principalType: v.union(principalTypeValidator, v.null()),
+    principalId: nullableString,
+    customerId: nullableString,
+    payload: metadataValidator,
+    receivedAt: v.number(),
+    processedAt: nullableNumber
+  })
+    .index('by_dedup', ['dedupKey'])
+    .index('by_type', ['eventType', 'receivedAt'])
+    .index('by_principal', ['principalType', 'principalId', 'receivedAt'])
 });

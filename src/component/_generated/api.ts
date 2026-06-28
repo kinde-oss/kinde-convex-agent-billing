@@ -16,6 +16,7 @@ import type * as mandates from "../mandates.js";
 import type * as transact from "../transact.js";
 import type * as usage from "../usage.js";
 import type * as validators from "../validators.js";
+import type * as webhooks from "../webhooks.js";
 
 import type {
   ApiFromModules,
@@ -33,6 +34,7 @@ const fullApi: ApiFromModules<{
   transact: typeof transact;
   usage: typeof usage;
   validators: typeof validators;
+  webhooks: typeof webhooks;
 }> = anyApi as any;
 
 /**
