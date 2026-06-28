@@ -5,7 +5,9 @@ import {
   metadataValidator,
   nullableNumber,
   nullableString,
-  principalTypeValidator
+  principalTypeValidator,
+  transactionStatusValidator,
+  transactionTypeValidator
 } from './validators.js';
 
 export default defineSchema({
@@ -123,5 +125,48 @@ export default defineSchema({
     .index('by_principal', ['principalType', 'principalId', 'at'])
     .index('by_org_code', ['orgCode', 'at'])
     .index('by_event_type', ['eventType', 'at'])
-    .index('by_correlation', ['correlationId'])
+    .index('by_correlation', ['correlationId']),
+
+  /**
+   * A billing transaction with a forward-only lifecycle (see
+   * `transactionStatusValidator`). `amount` carries the magnitude for
+   * credit/cancellation; for a plan_change it is 0 and `planCode` carries the
+   * target plan. No Kinde I/O ever happens against this row inside a mutation —
+   * execution is an action.
+   */
+  transactions: defineTable({
+    principalType: principalTypeValidator,
+    principalId: v.string(),
+    orgCode: nullableString,
+    type: transactionTypeValidator,
+    amount: v.number(),
+    planCode: nullableString,
+    isProrate: v.union(v.boolean(), v.null()),
+    isInvoiceNow: v.union(v.boolean(), v.null()),
+    status: transactionStatusValidator,
+    approverSubject: nullableString,
+    resolvedAt: nullableNumber,
+    executedAt: nullableNumber,
+    failureReason: nullableString,
+    compensatedAt: nullableNumber,
+    correlationId: nullableString,
+    createdAt: v.number()
+  })
+    .index('by_principal', ['principalType', 'principalId', 'createdAt'])
+    .index('by_status', ['status', 'createdAt']),
+
+  /**
+   * Per-principal transaction caps + approval policy. No policy row means no
+   * caps and no approval required (a transaction is created directly approved).
+   */
+  transactionPolicies: defineTable({
+    principalType: principalTypeValidator,
+    principalId: v.string(),
+    perTxCap: nullableNumber,
+    perPeriodCap: nullableNumber,
+    periodStart: nullableNumber,
+    periodEnd: nullableNumber,
+    periodLengthMs: nullableNumber,
+    requireApproval: v.boolean()
+  }).index('by_principal', ['principalType', 'principalId'])
 });

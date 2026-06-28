@@ -27,6 +27,26 @@ export const decisionValidator = v.union(
   v.literal('degrade')
 );
 
+export const transactionTypeValidator = v.union(
+  v.literal('plan_change'),
+  v.literal('credit'),
+  v.literal('cancellation')
+);
+
+/**
+ * A transaction's lifecycle status. Status only ever moves forward:
+ * pending → approved → executed → compensated, or pending → rejected, or
+ * approved → failed.
+ */
+export const transactionStatusValidator = v.union(
+  v.literal('pending'),
+  v.literal('approved'),
+  v.literal('rejected'),
+  v.literal('executed'),
+  v.literal('failed'),
+  v.literal('compensated')
+);
+
 /**
  * Flat string-keyed metadata. Values are limited to primitives and string
  * arrays so the whole document stays fully typed (no `any` anywhere in the

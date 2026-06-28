@@ -13,6 +13,7 @@ import type * as enforce from "../enforce.js";
 import type * as helpers from "../helpers.js";
 import type * as kinde from "../kinde.js";
 import type * as mandates from "../mandates.js";
+import type * as transact from "../transact.js";
 import type * as usage from "../usage.js";
 import type * as validators from "../validators.js";
 
@@ -29,6 +30,7 @@ const fullApi: ApiFromModules<{
   helpers: typeof helpers;
   kinde: typeof kinde;
   mandates: typeof mandates;
+  transact: typeof transact;
   usage: typeof usage;
   validators: typeof validators;
 }> = anyApi as any;

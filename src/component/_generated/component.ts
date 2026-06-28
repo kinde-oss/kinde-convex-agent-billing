@@ -268,6 +268,152 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         Name
       >;
     };
+    transact: {
+      approve: FunctionReference<
+        "mutation",
+        "internal",
+        { approverSubject: string; transactionId: string },
+        null,
+        Name
+      >;
+      execute: FunctionReference<
+        "action",
+        "internal",
+        { transactionId: string },
+        {
+          status:
+            | "pending"
+            | "approved"
+            | "rejected"
+            | "executed"
+            | "failed"
+            | "compensated";
+        },
+        Name
+      >;
+      get: FunctionReference<
+        "query",
+        "internal",
+        { transactionId: string },
+        {
+          _creationTime: number;
+          _id: string;
+          amount: number;
+          approverSubject: string | null;
+          compensatedAt: number | null;
+          correlationId: string | null;
+          createdAt: number;
+          executedAt: number | null;
+          failureReason: string | null;
+          isInvoiceNow: boolean | null;
+          isProrate: boolean | null;
+          orgCode: string | null;
+          planCode: string | null;
+          principalId: string;
+          principalType: "user" | "org" | "agent";
+          resolvedAt: number | null;
+          status:
+            | "pending"
+            | "approved"
+            | "rejected"
+            | "executed"
+            | "failed"
+            | "compensated";
+          type: "plan_change" | "credit" | "cancellation";
+        } | null,
+        Name
+      >;
+      listForPrincipal: FunctionReference<
+        "query",
+        "internal",
+        {
+          limit?: number;
+          principalId: string;
+          principalType: "user" | "org" | "agent";
+          status?:
+            | "pending"
+            | "approved"
+            | "rejected"
+            | "executed"
+            | "failed"
+            | "compensated";
+        },
+        Array<{
+          _creationTime: number;
+          _id: string;
+          amount: number;
+          approverSubject: string | null;
+          compensatedAt: number | null;
+          correlationId: string | null;
+          createdAt: number;
+          executedAt: number | null;
+          failureReason: string | null;
+          isInvoiceNow: boolean | null;
+          isProrate: boolean | null;
+          orgCode: string | null;
+          planCode: string | null;
+          principalId: string;
+          principalType: "user" | "org" | "agent";
+          resolvedAt: number | null;
+          status:
+            | "pending"
+            | "approved"
+            | "rejected"
+            | "executed"
+            | "failed"
+            | "compensated";
+          type: "plan_change" | "credit" | "cancellation";
+        }>,
+        Name
+      >;
+      refund: FunctionReference<
+        "mutation",
+        "internal",
+        { reason: string; transactionId: string },
+        null,
+        Name
+      >;
+      reject: FunctionReference<
+        "mutation",
+        "internal",
+        { approverSubject: string; transactionId: string },
+        null,
+        Name
+      >;
+      request: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          amount?: number;
+          correlationId?: string | null;
+          isInvoiceNow?: boolean;
+          isProrate?: boolean;
+          orgCode?: string | null;
+          planCode?: string | null;
+          principalId: string;
+          principalType: "user" | "org" | "agent";
+          type: "plan_change" | "credit" | "cancellation";
+        },
+        string,
+        Name
+      >;
+      setPolicy: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          perPeriodCap?: number | null;
+          perTxCap?: number | null;
+          periodEnd?: number | null;
+          periodLengthMs?: number | null;
+          periodStart?: number | null;
+          principalId: string;
+          principalType: "user" | "org" | "agent";
+          requireApproval: boolean;
+        },
+        string,
+        Name
+      >;
+    };
     usage: {
       getEvent: FunctionReference<
         "query",

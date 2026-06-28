@@ -54,6 +54,16 @@ export type ChangePlanResult = FunctionReturnType<
   ComponentApi['kinde']['changePlan']
 >;
 
+/** A transaction row. */
+export type TransactionResult = FunctionReturnType<
+  ComponentApi['transact']['get']
+>;
+
+/** The result of executing a transaction. */
+export type ExecuteResult = FunctionReturnType<
+  ComponentApi['transact']['execute']
+>;
+
 /**
  * Options for the {@link AgentBilling} client. Empty for now — the provider and
  * `verifyCaller` slots arrive in later phases. Kept as an interface (rather than
@@ -214,5 +224,63 @@ export class AgentBilling {
     args: FunctionArgs<ComponentApi['kinde']['changePlan']>
   ) {
     return ctx.runAction(this.component.kinde.changePlan, args);
+  }
+
+  // --- Transact ---
+
+  requestTransaction(
+    ctx: RunMutationCtx,
+    args: FunctionArgs<ComponentApi['transact']['request']>
+  ) {
+    return ctx.runMutation(this.component.transact.request, args);
+  }
+
+  approveTransaction(
+    ctx: RunMutationCtx,
+    args: FunctionArgs<ComponentApi['transact']['approve']>
+  ) {
+    return ctx.runMutation(this.component.transact.approve, args);
+  }
+
+  rejectTransaction(
+    ctx: RunMutationCtx,
+    args: FunctionArgs<ComponentApi['transact']['reject']>
+  ) {
+    return ctx.runMutation(this.component.transact.reject, args);
+  }
+
+  executeTransaction(
+    ctx: RunFullCtx,
+    args: FunctionArgs<ComponentApi['transact']['execute']>
+  ) {
+    return ctx.runAction(this.component.transact.execute, args);
+  }
+
+  refundTransaction(
+    ctx: RunMutationCtx,
+    args: FunctionArgs<ComponentApi['transact']['refund']>
+  ) {
+    return ctx.runMutation(this.component.transact.refund, args);
+  }
+
+  getTransaction(
+    ctx: RunQueryCtx,
+    args: FunctionArgs<ComponentApi['transact']['get']>
+  ) {
+    return ctx.runQuery(this.component.transact.get, args);
+  }
+
+  listTransactions(
+    ctx: RunQueryCtx,
+    args: FunctionArgs<ComponentApi['transact']['listForPrincipal']>
+  ) {
+    return ctx.runQuery(this.component.transact.listForPrincipal, args);
+  }
+
+  setTransactionPolicy(
+    ctx: RunMutationCtx,
+    args: FunctionArgs<ComponentApi['transact']['setPolicy']>
+  ) {
+    return ctx.runMutation(this.component.transact.setPolicy, args);
   }
 }
