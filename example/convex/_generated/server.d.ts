@@ -25,6 +25,9 @@ import type { DataModel } from "./dataModel.js";
  * Typesafe environment variables declared in `convex.config.ts`.
  */
 type Env = {
+  readonly KINDE_ISSUER_URL: string;
+  readonly KINDE_M2M_CLIENT_ID: string;
+  readonly KINDE_M2M_CLIENT_SECRET: string;
   readonly MANDATE_SIGNING_SECRET: string;
 };
 

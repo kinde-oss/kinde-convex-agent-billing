@@ -39,6 +39,21 @@ export type MandateVerifyResult = FunctionReturnType<
   ComponentApi['mandates']['verify']
 >;
 
+/** The result of reporting metered usage to Kinde. */
+export type PushUsageResult = FunctionReturnType<
+  ComponentApi['kinde']['pushUsage']
+>;
+
+/** The result of syncing a Kinde entitlement into a local budget. */
+export type SyncEntitlementsResult = FunctionReturnType<
+  ComponentApi['kinde']['syncEntitlements']
+>;
+
+/** The result of a Kinde plan change. */
+export type ChangePlanResult = FunctionReturnType<
+  ComponentApi['kinde']['changePlan']
+>;
+
 /**
  * Options for the {@link AgentBilling} client. Empty for now — the provider and
  * `verifyCaller` slots arrive in later phases. Kept as an interface (rather than
@@ -169,5 +184,35 @@ export class AgentBilling {
     args: FunctionArgs<ComponentApi['budgets']['set']>
   ) {
     return ctx.runMutation(this.component.budgets.set, args);
+  }
+
+  // --- Kinde billing integration ---
+
+  setKindeCustomer(
+    ctx: RunMutationCtx,
+    args: FunctionArgs<ComponentApi['kinde']['setCustomerMapping']>
+  ) {
+    return ctx.runMutation(this.component.kinde.setCustomerMapping, args);
+  }
+
+  pushUsageToKinde(
+    ctx: RunFullCtx,
+    args: FunctionArgs<ComponentApi['kinde']['pushUsage']>
+  ) {
+    return ctx.runAction(this.component.kinde.pushUsage, args);
+  }
+
+  syncEntitlements(
+    ctx: RunFullCtx,
+    args: FunctionArgs<ComponentApi['kinde']['syncEntitlements']>
+  ) {
+    return ctx.runAction(this.component.kinde.syncEntitlements, args);
+  }
+
+  changePlan(
+    ctx: RunFullCtx,
+    args: FunctionArgs<ComponentApi['kinde']['changePlan']>
+  ) {
+    return ctx.runAction(this.component.kinde.changePlan, args);
   }
 }

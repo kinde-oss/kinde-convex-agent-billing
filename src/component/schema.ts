@@ -48,6 +48,27 @@ export default defineSchema({
     .index('by_org_code', ['orgCode', 'at']),
 
   /**
+   * Single-row cache for the Kinde M2M access token. `key` is always 'm2m';
+   * the row is reused until shortly before `expiresAt`.
+   */
+  kindeTokenCache: defineTable({
+    key: v.string(),
+    accessToken: v.string(),
+    expiresAt: v.number()
+  }).index('by_key', ['key']),
+
+  /**
+   * Maps a local principal to its Kinde billing identifiers. Kinde-specific:
+   * the spine never reads this — only the Kinde integration layer does.
+   */
+  kindeCustomers: defineTable({
+    principalType: principalTypeValidator,
+    principalId: v.string(),
+    customerId: v.string(),
+    customerAgreementId: nullableString
+  }).index('by_principal', ['principalType', 'principalId']),
+
+  /**
    * A spend mandate: HMAC-signed authority for an agent to spend up to
    * `budgetCap` (running `budgetSpent`) of `unit` on behalf of a principal,
    * within `[notBefore, notAfter)`. Verifiable without external calls.

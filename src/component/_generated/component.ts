@@ -108,6 +108,60 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         Name
       >;
     };
+    kinde: {
+      changePlan: FunctionReference<
+        "action",
+        "internal",
+        {
+          isInvoiceNow?: boolean;
+          isProrate?: boolean;
+          planCode: string;
+          principalId: string;
+          principalType: "user" | "org" | "agent";
+        },
+        { changed: boolean },
+        Name
+      >;
+      getAccessToken: FunctionReference<"action", "internal", {}, string, Name>;
+      pushUsage: FunctionReference<
+        "action",
+        "internal",
+        {
+          billingFeatureCode: string;
+          idempotencyKey: string;
+          meterValue: number;
+          principalId: string;
+          principalType: "user" | "org" | "agent";
+        },
+        { reported: boolean },
+        Name
+      >;
+      setCustomerMapping: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          customerAgreementId?: string | null;
+          customerId: string;
+          principalId: string;
+          principalType: "user" | "org" | "agent";
+        },
+        string,
+        Name
+      >;
+      syncEntitlements: FunctionReference<
+        "action",
+        "internal",
+        {
+          billingFeatureCode: string;
+          orgCode?: string | null;
+          principalId: string;
+          principalType: "user" | "org" | "agent";
+          unit: string;
+        },
+        { found: boolean; limit: number | null; remaining: number | null },
+        Name
+      >;
+    };
     mandates: {
       get: FunctionReference<
         "query",
