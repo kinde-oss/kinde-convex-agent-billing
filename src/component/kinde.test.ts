@@ -220,19 +220,43 @@ describe('kinde integration', () => {
   });
 
   test('syncEntitlements hydrates a kinde-source budget that gate.check then reads', async () => {
+    // The real Kinde entitlements response: top-level entitlements[]/has_more/
+    // plans[], a finite limit in `entitlement_limit_max`, and no consumed figure
+    // (a fresh kinde-source budget starts full at the limit).
     mockFetch((url) =>
       url.startsWith(ENTITLEMENTS_PREFIX)
         ? jsonResponse({
-            entitlements: [
-              {id: 'e1', feature_code: 'images', entitlement_limit_max: 5},
+            code: 'OK',
+            plans: [
               {
-                id: 'e2',
-                feature_code: 'tokens',
-                entitlement_limit_max: 1000,
-                consumed: 200
+                code: 'customer_pro_plan',
+                name: 'Pro',
+                subscribed_on: '2026-01-01'
               }
             ],
-            has_more: false
+            has_more: false,
+            entitlements: [
+              {
+                id: 'entitlement_images',
+                price_name: 'Images',
+                unit_amount: 0.0,
+                feature_code: 'images',
+                feature_name: 'Images',
+                fixed_charge: 0.0,
+                entitlement_limit_max: 5,
+                entitlement_limit_min: 0
+              },
+              {
+                id: 'entitlement_api_calls',
+                price_name: 'API Calls',
+                unit_amount: 0.0,
+                feature_code: 'tokens',
+                feature_name: 'API Calls',
+                fixed_charge: 0.0,
+                entitlement_limit_max: 1000,
+                entitlement_limit_min: 0
+              }
+            ]
           })
         : undefined
     );
@@ -245,7 +269,7 @@ describe('kinde integration', () => {
       unit: 'tokens',
       billingFeatureCode: 'tokens'
     });
-    expect(result).toEqual({found: true, remaining: 800, limit: 1000});
+    expect(result).toEqual({found: true, remaining: 1000, limit: 1000});
 
     // The hydrated budget is source 'kinde' and readable by the spine.
     const budget = await t.query(api.budgets.get, {
@@ -254,7 +278,7 @@ describe('kinde integration', () => {
       unit: 'tokens'
     });
     expect(budget?.source).toBe('kinde');
-    expect(budget?.remaining).toBe(800);
+    expect(budget?.remaining).toBe(1000);
 
     // gate.check reads the hydrated budget.
     const decision = await t.mutation(api.enforce.check, {
@@ -266,19 +290,26 @@ describe('kinde integration', () => {
     expect(decision.decision).toBe('allow');
   });
 
-  test('syncEntitlements maps a null limit to the unlimited sentinel', async () => {
+  test('syncEntitlements maps the int32-max unlimited marker to the unlimited sentinel', async () => {
+    // Kinde encodes "unlimited" as int32 max (2147483647), not null.
     mockFetch((url) =>
       url.startsWith(ENTITLEMENTS_PREFIX)
         ? jsonResponse({
+            code: 'OK',
+            plans: [],
+            has_more: false,
             entitlements: [
               {
-                id: 'e1',
+                id: 'entitlement_api_calls',
+                price_name: 'API Calls',
+                unit_amount: 0.0,
                 feature_code: 'tokens',
-                entitlement_limit_max: null,
-                consumed: 10
+                feature_name: 'API Calls',
+                fixed_charge: 0.0,
+                entitlement_limit_max: 2147483647,
+                entitlement_limit_min: 0
               }
-            ],
-            has_more: false
+            ]
           })
         : undefined
     );
@@ -291,8 +322,9 @@ describe('kinde integration', () => {
       unit: 'tokens',
       billingFeatureCode: 'tokens'
     });
+    // No consumed figure from Kinde -> remaining starts full at the sentinel.
     expect(result.limit).toBe(Number.MAX_SAFE_INTEGER);
-    expect(result.remaining).toBe(Number.MAX_SAFE_INTEGER - 10);
+    expect(result.remaining).toBe(Number.MAX_SAFE_INTEGER);
   });
 
   test('syncEntitlements paginates until the feature is found', async () => {

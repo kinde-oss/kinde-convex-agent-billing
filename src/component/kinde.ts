@@ -30,12 +30,17 @@ const kindeTokenCacheDoc = schema.tables.kindeTokenCache.validator.extend({
 
 /**
  * Sentinel used to represent an unlimited Kinde entitlement as a concrete
- * budget figure. Kinde reports an unlimited feature with a null limit/max; we
- * hydrate the local budget with this value so the same `gate.check` /
- * `usage.record` code path (which compares against `remaining`) keeps working
- * without special-casing infinity.
+ * budget figure. We hydrate the local budget with this value so the same
+ * `gate.check` / `usage.record` code path (which compares against `remaining`)
+ * keeps working without special-casing infinity.
  */
 const UNLIMITED = Number.MAX_SAFE_INTEGER;
+
+/**
+ * Kinde reports an unlimited entitlement as int32 max (2147483647) in
+ * `entitlement_limit_max`, not as null. We map that marker to {@link UNLIMITED}.
+ */
+const KINDE_UNLIMITED = 2147483647;
 
 /** Refresh the cached token this many ms before it actually expires. */
 const TOKEN_SKEW_MS = 60_000;
@@ -111,6 +116,31 @@ async function readJson(
   }
 }
 
+/**
+ * Fail on a non-ok Kinde response, folding Kinde's error body into the message
+ * so a scope/validation problem surfaces its `{code, message}` (e.g.
+ * SCOPE_MISSING) instead of a bare status. The typed `code` is unchanged.
+ */
+async function kindeError(
+  response: Response,
+  url: string,
+  code: string
+): Promise<never> {
+  let detail = '';
+  try {
+    const body = (await response.json()) as unknown;
+    if (typeof body === 'object' && body !== null) {
+      detail = ` ${JSON.stringify(body)}`;
+    }
+  } catch {
+    /* non-JSON body */
+  }
+  fail(
+    code,
+    `Kinde request to ${url} failed with status ${response.status}.${detail}`
+  );
+}
+
 /** Read a property of an already-narrowed object without a blind cast. */
 function field(obj: object, key: string): unknown {
   return key in obj ? (obj as Record<string, unknown>)[key] : undefined;
@@ -149,14 +179,10 @@ function narrowEntitlement(value: unknown): Entitlement | null {
     return null;
   }
   const rawMax = field(value, 'entitlement_limit_max');
-  const rawMaxValue = field(value, 'max_value');
   let limit: number;
   if (typeof rawMax === 'number') {
-    limit = rawMax;
-  } else if (typeof rawMaxValue === 'number') {
-    // Kinde returns the requested max_value as the limit when the real max is
-    // null (unlimited).
-    limit = rawMaxValue;
+    // Kinde encodes "unlimited" as int32 max, not null.
+    limit = rawMax === KINDE_UNLIMITED ? UNLIMITED : rawMax;
   } else {
     limit = UNLIMITED;
   }
@@ -419,10 +445,7 @@ async function ensureToken(ctx: ActionCtx): Promise<string> {
     })
   });
   if (!response.ok) {
-    fail(
-      'kinde_token_fetch_failed',
-      `Fetching ${tokenUrl} failed with status ${response.status}.`
-    );
+    await kindeError(response, tokenUrl, 'kinde_token_fetch_failed');
   }
   const json = await readJson(response, tokenUrl, 'kinde_response_malformed');
   const token = narrowToken(json);
@@ -504,10 +527,7 @@ export const pushUsage = action({
       })
     });
     if (!response.ok) {
-      fail(
-        'kinde_meter_usage_failed',
-        `Posting to ${url} failed with status ${response.status}.`
-      );
+      await kindeError(response, url, 'kinde_meter_usage_failed');
     }
     await readJson(response, url, 'kinde_response_malformed');
     return {reported: true};
@@ -555,8 +575,7 @@ export const syncEntitlements = action({
     for (let page = 0; page < 100 && match === null; page++) {
       const params = new URLSearchParams({
         customer_id: mapping.customerId,
-        expand: 'plans',
-        max_value: String(UNLIMITED)
+        expand: 'plans'
       });
       if (startingAfter !== null) {
         params.set('starting_after', startingAfter);
@@ -566,10 +585,7 @@ export const syncEntitlements = action({
         headers: {Authorization: `Bearer ${token}`}
       });
       if (!response.ok) {
-        fail(
-          'kinde_entitlements_failed',
-          `Fetching ${url} failed with status ${response.status}.`
-        );
+        await kindeError(response, url, 'kinde_entitlements_failed');
       }
       const json = await readJson(response, url, 'kinde_response_malformed');
       const parsed = narrowEntitlementsPage(json);
@@ -652,10 +668,7 @@ export const changePlan = action({
       })
     });
     if (!response.ok) {
-      fail(
-        'kinde_agreement_failed',
-        `Posting to ${url} failed with status ${response.status}.`
-      );
+      await kindeError(response, url, 'kinde_agreement_failed');
     }
     await readJson(response, url, 'kinde_response_malformed');
     await ctx.runMutation(internal.kinde.recordPlanChanged, {
