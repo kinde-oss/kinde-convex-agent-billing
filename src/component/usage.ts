@@ -24,7 +24,7 @@ const usageEventDoc = schema.tables.usageEvents.validator.extend({
  * enter the transaction's read set, so two concurrent calls with the same key
  * serialize. One applies and commits; the other's commit conflicts on those
  * reads, retries, now observes the idempotency row written by the winner, and
- * returns `deduplicated`. A failed guard (steps 1, 3, 4, 5, 6) writes nothing,
+ * returns `deduplicated`. A failed guard (steps 1, 3, 3a, 4, 5) writes nothing,
  * so the whole mutation rolls back atomically.
  *
  * A `mandateId` binds the spend to a mandate (invariant: a mandate is a second,
@@ -59,8 +59,15 @@ export const record = mutation({
     const orgCode = args.orgCode ?? null;
     const correlationId = args.correlationId ?? null;
 
-    // 2. Derive the idempotency scope and the request fingerprint.
-    const scope = `${args.principalType}:${args.principalId}:${args.unit}`;
+    // 2. Derive the idempotency scope and the request fingerprint. The scope is
+    // a structured JSON encoding that INCLUDES orgCode, so it is tenant-safe and
+    // immune to `:`-in-id aliasing.
+    const scope = JSON.stringify([
+      args.principalType,
+      args.principalId,
+      orgCode,
+      args.unit
+    ]);
     const fingerprint = JSON.stringify([
       args.principalType,
       args.principalId,
@@ -115,6 +122,12 @@ export const record = mutation({
           'The mandate authorizes a different principal.'
         );
       }
+      if (mandate.orgCode !== orgCode) {
+        fail(
+          'mandate_tenant_mismatch',
+          'The mandate authorizes a different tenant.'
+        );
+      }
       if (mandate.unit !== args.unit) {
         fail(
           'mandate_unit_mismatch',
@@ -129,13 +142,16 @@ export const record = mutation({
       }
     }
 
-    // 4. Load the budget.
+    // 4. Load the budget. The lookup is tenant-scoped by orgCode, so a budget
+    // belonging to a different org is simply not found (budget_not_found) rather
+    // than aliasing across tenants.
     const budget = await ctx.db
       .query('budgets')
       .withIndex('by_principal', (q) =>
         q
           .eq('principalType', args.principalType)
           .eq('principalId', args.principalId)
+          .eq('orgCode', orgCode)
           .eq('unit', args.unit)
       )
       .unique();
@@ -143,18 +159,13 @@ export const record = mutation({
       fail('budget_not_found', 'No budget exists for this principal and unit.');
     }
 
-    // 5. Tenant isolation.
-    if (orgCode !== budget.orgCode) {
-      fail('tenant_mismatch', 'orgCode does not match the budget tenant.');
-    }
-
-    // 6. Derive the live budget (rolling a stale local window) and check it.
+    // 5. Derive the live budget (rolling a stale local window) and check it.
     const eff = effectiveBudget(budget, now);
     if (eff.remaining < args.quantity) {
       fail('budget_exceeded', 'Insufficient remaining budget.');
     }
 
-    // 7. Decrement, persisting any window roll from step 6.
+    // 6. Decrement, persisting any window roll from step 5.
     const newRemaining = eff.remaining - args.quantity;
     await ctx.db.patch('budgets', budget._id, {
       remaining: newRemaining,
@@ -162,14 +173,14 @@ export const record = mutation({
       periodEnd: eff.periodEnd
     });
 
-    // 7a. Bump the bound mandate's running spend in the same transaction.
+    // 6a. Bump the bound mandate's running spend in the same transaction.
     if (mandate !== null) {
       await ctx.db.patch('mandates', mandate._id, {
         budgetSpent: mandate.budgetSpent + args.quantity
       });
     }
 
-    // 8. Record the usage event.
+    // 7. Record the usage event.
     const usageEventId = await ctx.db.insert('usageEvents', {
       principalType: args.principalType,
       principalId: args.principalId,
@@ -182,7 +193,7 @@ export const record = mutation({
       at: now
     });
 
-    // 9. Record the idempotency outcome.
+    // 8. Record the idempotency outcome.
     await ctx.db.insert('idempotencyKeys', {
       scope,
       idempotencyKey: args.idempotencyKey,
@@ -192,7 +203,7 @@ export const record = mutation({
       at: now
     });
 
-    // 10. Audit.
+    // 9. Audit.
     await writeAudit(ctx, {
       eventType: 'usage.recorded',
       principalType: args.principalType,
@@ -210,7 +221,7 @@ export const record = mutation({
       }
     });
 
-    // 11.
+    // 10.
     return {status: 'applied' as const, usageEventId, remaining: newRemaining};
   }
 });

@@ -300,6 +300,7 @@ export const hydrateBudget = internalMutation({
         q
           .eq('principalType', args.principalType)
           .eq('principalId', args.principalId)
+          .eq('orgCode', args.orgCode)
           .eq('unit', args.unit)
       )
       .unique();

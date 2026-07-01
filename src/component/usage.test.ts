@@ -208,10 +208,12 @@ describe('usage.record — the spine', () => {
     });
   });
 
-  test('tenant_mismatch: a wrong orgCode fails and writes nothing', async () => {
+  test('cross-tenant: a wrong orgCode finds no budget and writes nothing', async () => {
     const t = initConvexTest();
     await setBudget(t, 100, 'org_acme');
 
+    // The budget is keyed to org_acme; recording under org_other finds no
+    // budget (tenant isolation is enforced by the tenant-scoped key).
     await expectFail(
       t.mutation(api.usage.record, {
         principalType: 'user',
@@ -221,10 +223,17 @@ describe('usage.record — the spine', () => {
         quantity: 10,
         idempotencyKey: 'k1'
       }),
-      'tenant_mismatch'
+      'budget_not_found'
     );
 
-    expect(await remainingOf(t)).toBe(100);
+    // The org_acme budget is untouched.
+    const budget = await t.query(api.budgets.get, {
+      principalType: 'user',
+      principalId: 'user_alice',
+      orgCode: 'org_acme',
+      unit: 'tokens'
+    });
+    expect(budget?.remaining).toBe(100);
     expect(await counts(t)).toEqual({
       usageEvents: 0,
       idempotencyKeys: 0,
@@ -316,7 +325,7 @@ describe('usage.record — the spine', () => {
   async function mintMandate(
     t: ConvexTest,
     budgetCap: number,
-    overrides: {principalId?: string; unit?: string} = {}
+    overrides: {principalId?: string; unit?: string; orgCode?: string} = {}
   ): Promise<Id<'mandates'>> {
     return await t.mutation(api.mandates.mint, {
       principalType: 'user',
@@ -325,7 +334,8 @@ describe('usage.record — the spine', () => {
       unit: overrides.unit ?? 'tokens',
       scope: ['chat.completions'],
       budgetCap,
-      notAfter: Date.now() + HOUR
+      notAfter: Date.now() + HOUR,
+      ...(overrides.orgCode === undefined ? {} : {orgCode: overrides.orgCode})
     });
   }
 
@@ -475,5 +485,59 @@ describe('usage.record — the spine', () => {
       usageEventId: result.usageEventId
     });
     expect(event?.mandateId).toBeNull();
+  });
+
+  test('a mandate for one org cannot spend against a different org (mandate_tenant_mismatch)', async () => {
+    const t = initConvexTest();
+    const mandateId = await mintMandate(t, 50, {orgCode: 'org_a'});
+
+    // Principal and unit match the mandate, but the orgCode differs. The tenant
+    // check runs in the mandate block, before any budget lookup.
+    await expectFail(
+      t.mutation(api.usage.record, {
+        principalType: 'user',
+        principalId: 'user_alice',
+        orgCode: 'org_b',
+        unit: 'tokens',
+        quantity: 10,
+        idempotencyKey: 'k1',
+        mandateId
+      }),
+      'mandate_tenant_mismatch'
+    );
+  });
+
+  test('idempotency scope is tenant-separated: the same key under two orgs does not collide', async () => {
+    const t = initConvexTest();
+    await setBudget(t, 100, 'org_a');
+    await setBudget(t, 100, 'org_b');
+
+    const a = await t.mutation(api.usage.record, {
+      principalType: 'user',
+      principalId: 'user_alice',
+      orgCode: 'org_a',
+      unit: 'tokens',
+      quantity: 10,
+      idempotencyKey: 'shared-key'
+    });
+    const b = await t.mutation(api.usage.record, {
+      principalType: 'user',
+      principalId: 'user_alice',
+      orgCode: 'org_b',
+      unit: 'tokens',
+      quantity: 10,
+      idempotencyKey: 'shared-key'
+    });
+
+    // Both apply (not deduplicated): the scope JSON includes orgCode, so the
+    // same idempotencyKey under two tenants is two distinct records.
+    expect(a.status).toBe('applied');
+    expect(b.status).toBe('applied');
+    expect(b.usageEventId).not.toBe(a.usageEventId);
+    expect(await counts(t)).toEqual({
+      usageEvents: 2,
+      idempotencyKeys: 2,
+      recorded: 2
+    });
   });
 });

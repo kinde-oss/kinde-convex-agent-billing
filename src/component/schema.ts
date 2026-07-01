@@ -12,10 +12,12 @@ import {
 
 export default defineSchema({
   /**
-   * One spendable budget per (principalType, principalId, unit). A `local`
-   * budget is owned and advanced by this component; a `kinde` budget mirrors
-   * an external source of truth that the component never resets (see
-   * `effectiveBudget`).
+   * One spendable budget per (principalType, principalId, orgCode, unit). A
+   * `local` budget is owned and advanced by this component; a `kinde` budget
+   * mirrors an external source of truth that the component never resets (see
+   * `effectiveBudget`). `orgCode` is part of the identity so the same
+   * principal/unit in two orgs are distinct, tenant-isolated budgets; a
+   * null-org (single-tenant) budget is its own distinct key.
    */
   budgets: defineTable({
     principalType: principalTypeValidator,
@@ -30,7 +32,7 @@ export default defineSchema({
     source: budgetSourceValidator,
     createdAt: v.number()
   })
-    .index('by_principal', ['principalType', 'principalId', 'unit'])
+    .index('by_principal', ['principalType', 'principalId', 'orgCode', 'unit'])
     .index('by_org_code', ['orgCode']),
 
   /** Append-only record of every applied usage deduction. */

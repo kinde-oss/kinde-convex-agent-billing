@@ -18,6 +18,7 @@ describe('budgets', () => {
     const budget = await t.query(api.budgets.get, {
       principalType: 'user',
       principalId: 'user_alice',
+      orgCode: 'org_acme',
       unit: 'tokens'
     });
     expect(budget?._id).toBe(budgetId);
@@ -61,6 +62,7 @@ describe('budgets', () => {
           q
             .eq('principalType', 'org')
             .eq('principalId', 'org_acme')
+            .eq('orgCode', null)
             .eq('unit', 'tokens')
         )
         .collect()

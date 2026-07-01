@@ -80,6 +80,7 @@ export const set = mutation({
         q
           .eq('principalType', args.principalType)
           .eq('principalId', args.principalId)
+          .eq('orgCode', orgCode)
           .eq('unit', args.unit)
       )
       .unique();
@@ -128,21 +129,24 @@ export const set = mutation({
   }
 });
 
-/** Read the budget for (principalType, principalId, unit), or null. */
+/** Read the budget for (principalType, principalId, orgCode, unit), or null. */
 export const get = query({
   args: {
     principalType: principalTypeValidator,
     principalId: v.string(),
+    orgCode: v.optional(nullableString),
     unit: v.string()
   },
   returns: v.union(budgetDoc, v.null()),
   handler: async (ctx, args) => {
+    const orgCode = args.orgCode ?? null;
     return await ctx.db
       .query('budgets')
       .withIndex('by_principal', (q) =>
         q
           .eq('principalType', args.principalType)
           .eq('principalId', args.principalId)
+          .eq('orgCode', orgCode)
           .eq('unit', args.unit)
       )
       .unique();
@@ -161,6 +165,7 @@ export const getEffective = query({
   args: {
     principalType: principalTypeValidator,
     principalId: v.string(),
+    orgCode: v.optional(nullableString),
     unit: v.string()
   },
   returns: v.union(
@@ -176,12 +181,14 @@ export const getEffective = query({
     v.null()
   ),
   handler: async (ctx, args) => {
+    const orgCode = args.orgCode ?? null;
     const budget = await ctx.db
       .query('budgets')
       .withIndex('by_principal', (q) =>
         q
           .eq('principalType', args.principalType)
           .eq('principalId', args.principalId)
+          .eq('orgCode', orgCode)
           .eq('unit', args.unit)
       )
       .unique();

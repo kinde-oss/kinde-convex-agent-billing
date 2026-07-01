@@ -73,6 +73,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         "query",
         "internal",
         {
+          orgCode?: string | null;
           principalId: string;
           principalType: "user" | "org" | "agent";
           unit: string;
@@ -98,6 +99,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         "query",
         "internal",
         {
+          orgCode?: string | null;
           principalId: string;
           principalType: "user" | "org" | "agent";
           unit: string;

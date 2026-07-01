@@ -84,13 +84,15 @@ export const check = mutation({
       fail('invalid_requested', 'requested must be greater than 0.');
     }
 
-    // 2. The budget must exist.
+    // 2. The budget must exist. The lookup is tenant-scoped by orgCode, so a
+    // budget belonging to a different org is not found (budget_not_found).
     const budget = await ctx.db
       .query('budgets')
       .withIndex('by_principal', (q) =>
         q
           .eq('principalType', args.principalType)
           .eq('principalId', args.principalId)
+          .eq('orgCode', orgCode)
           .eq('unit', args.unit)
       )
       .unique();
@@ -98,23 +100,18 @@ export const check = mutation({
       return await decide('deny', 'budget_not_found', {remaining: null});
     }
 
-    // 3. Tenant isolation.
-    if (orgCode !== budget.orgCode) {
-      return await decide('deny', 'tenant_mismatch', {remaining: null});
-    }
-
-    // 4. Derive the live budget (read-only — a due local roll is reflected but
+    // 3. Derive the live budget (read-only — a due local roll is reflected but
     // never persisted, exactly like budgets.getEffective).
     const eff = effectiveBudget(budget, now);
 
-    // 5. Enough headroom for the whole request → allow.
+    // 4. Enough headroom for the whole request → allow.
     if (eff.remaining >= args.requested) {
       return await decide('allow', 'within_budget', {
         remaining: eff.remaining
       });
     }
 
-    // 6. Some budget remains, but less than requested → degrade. Not a hard
+    // 5. Some budget remains, but less than requested → degrade. Not a hard
     // deny: the caller may proceed at reduced scope or request less.
     if (eff.remaining > 0) {
       return await decide('degrade', 'insufficient_remaining', {
@@ -122,7 +119,7 @@ export const check = mutation({
       });
     }
 
-    // 7. Nothing left → deny.
+    // 6. Nothing left → deny.
     return await decide('deny', 'budget_exhausted', {
       remaining: eff.remaining
     });

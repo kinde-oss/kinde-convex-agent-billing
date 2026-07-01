@@ -103,10 +103,11 @@ describe('enforce.check', () => {
     expect(rows[0].decision).toBe('deny');
   });
 
-  test('deny tenant: orgCode mismatch, remaining null', async () => {
+  test('deny tenant: a budget in another org is not found (tenant-scoped key), remaining null', async () => {
     const t = initConvexTest();
     await setBudget(t, 100, 'org_acme');
 
+    // The budget is keyed to org_acme; a check for org_other finds no budget.
     const result = await t.mutation(api.enforce.check, {
       principalType: 'user',
       principalId: 'user_alice',
@@ -115,7 +116,7 @@ describe('enforce.check', () => {
       requested: 5
     });
     expect(result.decision).toBe('deny');
-    expect(result.reason).toBe('tenant_mismatch');
+    expect(result.reason).toBe('budget_not_found');
     expect(result.remaining).toBeNull();
   });
 
