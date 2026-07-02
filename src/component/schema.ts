@@ -129,6 +129,7 @@ export default defineSchema({
     .index('by_principal', ['principalType', 'principalId', 'at'])
     .index('by_org_code', ['orgCode', 'at'])
     .index('by_event_type', ['eventType', 'at'])
+    .index('by_org_event', ['orgCode', 'eventType', 'at'])
     .index('by_correlation', ['correlationId']),
 
   /**
@@ -157,6 +158,12 @@ export default defineSchema({
     createdAt: v.number()
   })
     .index('by_principal', ['principalType', 'principalId', 'createdAt'])
+    .index('by_principal_status', [
+      'principalType',
+      'principalId',
+      'status',
+      'createdAt'
+    ])
     .index('by_status', ['status', 'createdAt']),
 
   /**
@@ -194,4 +201,10 @@ export default defineSchema({
     .index('by_dedup', ['dedupKey'])
     .index('by_type', ['eventType', 'receivedAt'])
     .index('by_principal', ['principalType', 'principalId', 'receivedAt'])
+    .index('by_principal_event', [
+      'principalType',
+      'principalId',
+      'eventType',
+      'receivedAt'
+    ])
 });

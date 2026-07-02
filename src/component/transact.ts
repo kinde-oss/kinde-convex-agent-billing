@@ -579,15 +579,26 @@ export const listForPrincipal = query({
   handler: async (ctx, args) => {
     const limit = Math.min(Math.max(args.limit ?? 100, 1), 200);
     const {principalType, principalId, status} = args;
-    const rows = await ctx.db
+    // Constrain by status via the index BEFORE the limit, so older matching
+    // transactions are not lost behind newer other-status rows.
+    if (status !== undefined) {
+      return await ctx.db
+        .query('transactions')
+        .withIndex('by_principal_status', (q) =>
+          q
+            .eq('principalType', principalType)
+            .eq('principalId', principalId)
+            .eq('status', status)
+        )
+        .order('desc')
+        .take(limit);
+    }
+    return await ctx.db
       .query('transactions')
       .withIndex('by_principal', (q) =>
         q.eq('principalType', principalType).eq('principalId', principalId)
       )
       .order('desc')
       .take(limit);
-    return status === undefined
-      ? rows
-      : rows.filter((row) => row.status === status);
   }
 });

@@ -85,7 +85,9 @@ export const ingest = internalMutation({
       customerId: args.customerId,
       payload: args.payload,
       receivedAt: now,
-      processedAt: now
+      // Freshly ingested events start unprocessed; `markProcessed` sets this
+      // once the app has actually reacted to the event.
+      processedAt: null
     });
     await writeAudit(ctx, {
       eventType: 'webhook.received',
@@ -150,16 +152,27 @@ export const listForPrincipal = query({
   handler: async (ctx, args) => {
     const limit = Math.min(Math.max(args.limit ?? 100, 1), 200);
     const {principalType, principalId, eventType} = args;
-    const rows = await ctx.db
+    // Constrain by eventType via the index BEFORE the limit, so older matching
+    // events are not lost behind newer other-type events.
+    if (eventType !== undefined) {
+      return await ctx.db
+        .query('webhookEvents')
+        .withIndex('by_principal_event', (q) =>
+          q
+            .eq('principalType', principalType)
+            .eq('principalId', principalId)
+            .eq('eventType', eventType)
+        )
+        .order('desc')
+        .take(limit);
+    }
+    return await ctx.db
       .query('webhookEvents')
       .withIndex('by_principal', (q) =>
         q.eq('principalType', principalType).eq('principalId', principalId)
       )
       .order('desc')
       .take(limit);
-    return eventType === undefined
-      ? rows
-      : rows.filter((row) => row.eventType === eventType);
   }
 });
 

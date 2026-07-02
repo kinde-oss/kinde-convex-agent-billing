@@ -50,15 +50,20 @@ function timeRange(
  * audit log is the source of truth.
  *
  * Filters are optional and combine with AND. The most selective available index
- * is chosen for the supplied equality filter, with the time range applied on the
- * trailing `at` field of that index:
+ * is chosen so that its equality fields constrain the query BEFORE pagination
+ * (paginating the raw index and filtering afterwards would underfill pages while
+ * matching rows remain behind the cursor). The time range is applied on the
+ * trailing `at` field of the chosen index:
  *   - principalType + principalId → `by_principal`  (['principalType','principalId','at'])
+ *   - orgCode + eventType         → `by_org_event`  (['orgCode','eventType','at'])
  *   - orgCode                     → `by_org_code`   (['orgCode','at'])
  *   - eventType                   → `by_event_type` (['eventType','at'])
  *   - otherwise                   → `by_at`         (['at'])
- * Any filters not covered by the chosen index are applied to the page in TS
- * (built-in `.paginate()` does not work in components, and `paginator` does not
- * support `.filter()`). `startAt`/`endAt` are both inclusive. Newest-first.
+ * A defensive TS filter re-applies every supplied filter to the page; because
+ * the chosen index already covers the query's equality filters, it never drops
+ * a row from a full page (built-in `.paginate()` does not work in components,
+ * and `paginator` does not support `.filter()`). `startAt`/`endAt` are both
+ * inclusive. Newest-first.
  */
 export const query = defineQuery({
   args: {
@@ -87,15 +92,23 @@ export const query = defineQuery({
               endAt
             )
           )
-        : orgCode !== undefined
-          ? pager.withIndex('by_org_code', (q) =>
-              timeRange(q.eq('orgCode', orgCode), startAt, endAt)
-            )
-          : eventType !== undefined
-            ? pager.withIndex('by_event_type', (q) =>
-                timeRange(q.eq('eventType', eventType), startAt, endAt)
+        : orgCode !== undefined && eventType !== undefined
+          ? pager.withIndex('by_org_event', (q) =>
+              timeRange(
+                q.eq('orgCode', orgCode).eq('eventType', eventType),
+                startAt,
+                endAt
               )
-            : pager.withIndex('by_at', (q) => timeRange(q, startAt, endAt));
+            )
+          : orgCode !== undefined
+            ? pager.withIndex('by_org_code', (q) =>
+                timeRange(q.eq('orgCode', orgCode), startAt, endAt)
+              )
+            : eventType !== undefined
+              ? pager.withIndex('by_event_type', (q) =>
+                  timeRange(q.eq('eventType', eventType), startAt, endAt)
+                )
+              : pager.withIndex('by_at', (q) => timeRange(q, startAt, endAt));
 
     const result = await ordered.order('desc').paginate(args.paginationOpts);
 

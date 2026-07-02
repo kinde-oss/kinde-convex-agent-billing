@@ -179,4 +179,44 @@ describe('registerRoutes (mounted by the example app)', () => {
     // Not mounted without a verifyCaller hook.
     expect(res.status).toBe(404);
   });
+
+  test('events/recent rejects a malformed body with 400', async () => {
+    const t = initConvexTest();
+
+    // Non-JSON body.
+    const badJson = await t.fetch('/billing-admin/events/recent', {
+      method: 'POST',
+      headers: {'X-Caller-Token': 'caller-ok'},
+      body: 'not-json'
+    });
+    expect(badJson.status).toBe(400);
+    expect(await badJson.json()).toMatchObject({code: 'invalid_body'});
+
+    // Wrong-typed limit (string instead of number).
+    const badLimit = await t.fetch('/billing-admin/events/recent', {
+      method: 'POST',
+      headers: {'X-Caller-Token': 'caller-ok'},
+      body: JSON.stringify({limit: '10'})
+    });
+    expect(badLimit.status).toBe(400);
+    expect(await badLimit.json()).toMatchObject({code: 'invalid_body'});
+  });
+
+  test('events/recent accepts a valid body (including an empty object)', async () => {
+    const t = initConvexTest();
+    const empty = await t.fetch('/billing-admin/events/recent', {
+      method: 'POST',
+      headers: {'X-Caller-Token': 'caller-ok'},
+      body: JSON.stringify({})
+    });
+    expect(empty.status).toBe(200);
+
+    const withFilter = await t.fetch('/billing-admin/events/recent', {
+      method: 'POST',
+      headers: {'X-Caller-Token': 'caller-ok'},
+      body: JSON.stringify({eventType: 'customer.payment_failed', limit: 5})
+    });
+    expect(withFilter.status).toBe(200);
+    expect(Array.isArray((await withFilter.json()).events)).toBe(true);
+  });
 });

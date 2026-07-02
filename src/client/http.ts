@@ -75,14 +75,26 @@ interface RecentBody {
   limit?: number;
 }
 
-function parseRecentBody(value: unknown): RecentBody {
+/**
+ * Narrow the recent-events request body. Returns null on a non-object body, a
+ * JSON parse failure (the caller passes `null`), or a wrong-typed field, so the
+ * route can reject it with 400 rather than silently running an unfiltered query.
+ * A valid object (including an empty one, meaning "no filter") is accepted.
+ */
+function parseRecentBody(value: unknown): RecentBody | null {
   if (typeof value !== 'object' || value === null) {
-    return {};
+    return null;
   }
   const {eventType, limit} = value as Record<string, unknown>;
+  if (eventType !== undefined && typeof eventType !== 'string') {
+    return null;
+  }
+  if (limit !== undefined && typeof limit !== 'number') {
+    return null;
+  }
   return {
-    ...(typeof eventType === 'string' ? {eventType} : {}),
-    ...(typeof limit === 'number' ? {limit} : {})
+    ...(eventType === undefined ? {} : {eventType}),
+    ...(limit === undefined ? {} : {limit})
   };
 }
 
@@ -164,6 +176,13 @@ export function registerRoutes(
         }
         const raw: unknown = await request.json().catch(() => null);
         const body = parseRecentBody(raw);
+        if (body === null) {
+          return json(400, {
+            code: 'invalid_body',
+            message:
+              'Expected a JSON object with optional string eventType and numeric limit.'
+          });
+        }
         const events = await ctx.runQuery(component.webhooks.listRecent, body);
         return json(200, {events});
       })

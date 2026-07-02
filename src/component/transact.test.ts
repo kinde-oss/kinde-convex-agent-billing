@@ -532,4 +532,50 @@ describe('transact', () => {
       'invalid_period'
     );
   });
+
+  test('listForPrincipal constrains status before the limit (older matches survive)', async () => {
+    mockFetch(() => undefined);
+    const t = initConvexTest();
+    // Two older 'executed' transactions, then newer 'approved' ones that would
+    // fill a small page first.
+    await t.run(async (ctx) => {
+      const rows: Array<{status: 'executed' | 'approved'; createdAt: number}> =
+        [
+          {status: 'executed', createdAt: 1000},
+          {status: 'executed', createdAt: 1500},
+          {status: 'approved', createdAt: 2000},
+          {status: 'approved', createdAt: 3000},
+          {status: 'approved', createdAt: 4000},
+          {status: 'approved', createdAt: 5000}
+        ];
+      for (const row of rows) {
+        await ctx.db.insert('transactions', {
+          principalType: 'org',
+          principalId: 'org_acme',
+          orgCode: null,
+          type: 'credit',
+          amount: 5,
+          planCode: null,
+          isProrate: null,
+          isInvoiceNow: null,
+          status: row.status,
+          approverSubject: null,
+          resolvedAt: null,
+          executedAt: row.status === 'executed' ? row.createdAt : null,
+          failureReason: null,
+          compensatedAt: null,
+          correlationId: null,
+          createdAt: row.createdAt
+        });
+      }
+    });
+
+    const executed = await t.query(api.transact.listForPrincipal, {
+      principalType: 'org',
+      principalId: 'org_acme',
+      status: 'executed',
+      limit: 2
+    });
+    expect(executed.map((r) => r.createdAt)).toEqual([1500, 1000]);
+  });
 });

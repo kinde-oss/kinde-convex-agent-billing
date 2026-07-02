@@ -278,13 +278,62 @@ describe('webhooks ingestion', () => {
     expect(verified.customerId).toBe('cust-9');
   });
 
-  test('markProcessed flips processedAt and rejects an unknown id', async () => {
+  test('a freshly ingested event starts unprocessed; markProcessed sets it', async () => {
     const t = initConvexTest();
     const {id} = await t.action(api.webhooks.receive, {
       token: await mint({jti: 'evt_p'})
     });
+    const before = await t.query(api.webhooks.get, {eventId: id});
+    expect(before?.processedAt).toBeNull();
+
     await t.mutation(api.webhooks.markProcessed, {eventId: id});
-    const event = await t.query(api.webhooks.get, {eventId: id});
-    expect(event?.processedAt).not.toBeNull();
+    const after = await t.query(api.webhooks.get, {eventId: id});
+    expect(after?.processedAt).not.toBeNull();
+  });
+
+  test('listForPrincipal constrains eventType before the limit (older matches survive)', async () => {
+    const t = initConvexTest();
+    // Two matching 'payment_failed' events (older), then several newer
+    // 'payment_succeeded' events that would fill a small page first.
+    await t.run(async (ctx) => {
+      const rows: Array<{eventType: string; receivedAt: number}> = [
+        {eventType: 'customer.payment_failed', receivedAt: 1000},
+        {eventType: 'customer.payment_failed', receivedAt: 1500},
+        {eventType: 'customer.payment_succeeded', receivedAt: 2000},
+        {eventType: 'customer.payment_succeeded', receivedAt: 3000},
+        {eventType: 'customer.payment_succeeded', receivedAt: 4000},
+        {eventType: 'customer.payment_succeeded', receivedAt: 5000}
+      ];
+      for (const row of rows) {
+        await ctx.db.insert('webhookEvents', {
+          eventType: row.eventType,
+          rawType: row.eventType,
+          dedupKey: `evt_${row.receivedAt}`,
+          principalType: 'user',
+          principalId: 'user_alice',
+          customerId: null,
+          payload: {},
+          receivedAt: row.receivedAt,
+          processedAt: null
+        });
+      }
+    });
+
+    // With a small limit, the older matching events must still be returned.
+    const failed = await t.query(api.webhooks.listForPrincipal, {
+      principalType: 'user',
+      principalId: 'user_alice',
+      eventType: 'customer.payment_failed',
+      limit: 2
+    });
+    expect(failed.map((r) => r.receivedAt)).toEqual([1500, 1000]);
+
+    const newest = await t.query(api.webhooks.listForPrincipal, {
+      principalType: 'user',
+      principalId: 'user_alice',
+      eventType: 'customer.payment_failed',
+      limit: 1
+    });
+    expect(newest.map((r) => r.receivedAt)).toEqual([1500]);
   });
 });

@@ -159,4 +159,48 @@ describe('audit.query', () => {
     await t.query(api.audit.query, {paginationOpts: page, eventType: 'x'});
     expect(await countAudit(t)).toBe(before);
   });
+
+  test('orgCode + eventType filter is applied before pagination and spans pages', async () => {
+    const t = initConvexTest();
+    // 10 rows in org_1 alternating x/y; the matching 'x' rows (100,300,500,
+    // 700,900) are interleaved with non-matching 'y' rows, so a naive
+    // paginate-then-filter would underfill pages and lose matches.
+    const rows: SeedRow[] = [];
+    for (let i = 1; i <= 10; i++) {
+      rows.push({
+        at: i * 100,
+        eventType: i % 2 === 1 ? 'x' : 'y',
+        orgCode: 'org_1'
+      });
+    }
+    // A second org with matching eventType that must never leak in.
+    rows.push({at: 1050, eventType: 'x', orgCode: 'org_2'});
+    await seed(t, rows);
+
+    // Page through with a small page size; the five matching org_1 'x' rows
+    // (900,700,500,300,100) span three pages and come back correctly, and the
+    // org_2 row never appears.
+    const p1 = await t.query(api.audit.query, {
+      paginationOpts: {numItems: 2, cursor: null},
+      orgCode: 'org_1',
+      eventType: 'x'
+    });
+    expect(p1.page.map((r) => r.at)).toEqual([900, 700]);
+    expect(p1.isDone).toBe(false);
+
+    const p2 = await t.query(api.audit.query, {
+      paginationOpts: {numItems: 2, cursor: p1.continueCursor},
+      orgCode: 'org_1',
+      eventType: 'x'
+    });
+    expect(p2.page.map((r) => r.at)).toEqual([500, 300]);
+
+    const p3 = await t.query(api.audit.query, {
+      paginationOpts: {numItems: 2, cursor: p2.continueCursor},
+      orgCode: 'org_1',
+      eventType: 'x'
+    });
+    expect(p3.page.map((r) => r.at)).toEqual([100]);
+    expect(p3.isDone).toBe(true);
+  });
 });
