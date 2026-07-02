@@ -593,6 +593,86 @@ describe('kinde integration', () => {
     );
   });
 
+  test('repeated syncEntitlements with an absent feature clears only once (idempotent no-op)', async () => {
+    const t = initConvexTest();
+    await mapCustomer(t);
+
+    // Hydrate a kinde budget.
+    mockFetch((url) =>
+      url.startsWith(ENTITLEMENTS_PREFIX)
+        ? jsonResponse({
+            code: 'OK',
+            plans: [],
+            has_more: false,
+            entitlements: [
+              {
+                id: 'e1',
+                feature_code: 'tokens',
+                entitlement_limit_max: 1000,
+                entitlement_limit_min: 0
+              }
+            ]
+          })
+        : undefined
+    );
+    await t.action(api.kinde.syncEntitlements, {
+      principalType: 'org',
+      principalId: 'org_acme',
+      unit: 'tokens',
+      billingFeatureCode: 'tokens'
+    });
+
+    // The feature is now absent for all subsequent syncs.
+    mockFetch((url) =>
+      url.startsWith(ENTITLEMENTS_PREFIX)
+        ? jsonResponse({
+            code: 'OK',
+            plans: [],
+            has_more: false,
+            entitlements: [
+              {
+                id: 'e2',
+                feature_code: 'images',
+                entitlement_limit_max: 5,
+                entitlement_limit_min: 0
+              }
+            ]
+          })
+        : undefined
+    );
+
+    const clearedCount = async (): Promise<number> =>
+      (
+        await t.run(async (ctx) =>
+          ctx.db
+            .query('auditLog')
+            .withIndex('by_event_type', (q) =>
+              q.eq('eventType', 'kinde.entitlement_cleared')
+            )
+            .collect()
+        )
+      ).length;
+
+    // First absent sync clears the kinde budget once.
+    await t.action(api.kinde.syncEntitlements, {
+      principalType: 'org',
+      principalId: 'org_acme',
+      unit: 'tokens',
+      billingFeatureCode: 'tokens'
+    });
+    expect(await clearedCount()).toBe(1);
+
+    // A second absent sync is a no-op: the budget is already zeroed, so no new
+    // patch and no duplicate audit row.
+    await t.action(api.kinde.syncEntitlements, {
+      principalType: 'org',
+      principalId: 'org_acme',
+      unit: 'tokens',
+      billingFeatureCode: 'tokens'
+    });
+    expect(await clearedCount()).toBe(1);
+  });
+
   test('syncEntitlements leaves a source:local budget untouched when the feature is absent', async () => {
     const t = initConvexTest();
     await mapCustomer(t);

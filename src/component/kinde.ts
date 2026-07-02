@@ -423,6 +423,9 @@ export const clearEntitlement = internalMutation({
     if (budget === null || budget.source !== 'kinde') {
       return null;
     }
+    if (budget.remaining === 0 && budget.periodCap === 0) {
+      return null; // already cleared; no state change, skip the patch and audit
+    }
     await ctx.db.patch('budgets', budget._id, {
       remaining: 0,
       periodCap: 0
