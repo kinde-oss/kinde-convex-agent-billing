@@ -69,14 +69,18 @@ const txStatus = v.union(
 
 /**
  * AUTH SEAM (app level). The billing component is auth-agnostic: every call
- * takes a principal the APP has already authenticated. In production the app
- * supplies a real verifyCaller-shaped function (Kinde auth, Better Auth, or a
- * custom one) that resolves a request to a `subject` — the blessed default is
- * pairing with `@kinde-oss/kinde-convex-agent-auth`'s `verifyCaller` at the app
- * level. This stub shows the SHAPE only; do not use it as-is. The resolved
- * subject becomes the `principalId` passed into the billing calls below.
+ * takes a principal the APP has already authenticated.
+ *
+ * EXAMPLE ONLY — INSECURE AS WRITTEN. In production this MUST resolve the
+ * principal from AUTHENTICATED app context: verify a session cookie or a bearer
+ * JWT against your auth provider (the blessed default is pairing with
+ * `@kinde-oss/kinde-convex-agent-auth`'s `verifyCaller`) and return the subject
+ * it proves. Trusting a raw header/body value like the `X-Subject` below lets a
+ * caller impersonate any principal — NEVER do this. The resolved, authenticated
+ * subject is what should be passed as `principalId` into the billing calls.
  */
 export async function resolveSubject(request: Request): Promise<string> {
+  // Placeholder for "verify the request and return the authenticated subject".
   const subject = request.headers.get('X-Subject');
   if (subject === null || subject.length === 0) {
     throw new Error('unauthenticated');
@@ -89,6 +93,16 @@ export const health = query({
   returns: v.string(),
   handler: async () => 'ok'
 });
+
+// IMPORTANT (auth seam): the wrappers below take `principalType`/`principalId`
+// as arguments because the component is auth-agnostic — the APP decides who the
+// principal is. In production these MUST come from AUTHENTICATED app context
+// (the subject your auth resolves; see `resolveSubject`), NOT from raw,
+// unauthenticated client input. Passing a caller's chosen principal straight
+// through would let them meter/spend/mutate against any tenant. Functions that
+// take an explicit principal here model admin / server-side / delegated flows
+// (budget seeding, mapping, plan changes) where the app has already authorized
+// acting for that principal; they are not caller-facing entrypoints.
 
 // --- Budget administration (local mode) ---
 

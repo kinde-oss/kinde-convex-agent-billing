@@ -71,6 +71,8 @@ async function mint(
 describe('registerRoutes (mounted by the example app)', () => {
   beforeEach(() => {
     vi.stubEnv('KINDE_ISSUER_URL', ISSUER);
+    // The example admin route validates X-Caller-Token against this secret.
+    vi.stubEnv('EXAMPLE_ADMIN_TOKEN', 'caller-ok');
     stubJwks();
   });
   afterEach(() => {
@@ -147,6 +149,16 @@ describe('registerRoutes (mounted by the example app)', () => {
     const t = initConvexTest();
     const res = await t.fetch('/billing-admin/events/recent', {
       method: 'POST',
+      body: JSON.stringify({})
+    });
+    expect(res.status).toBe(401);
+  });
+
+  test('the admin route rejects a wrong token (not "any token works")', async () => {
+    const t = initConvexTest();
+    const res = await t.fetch('/billing-admin/events/recent', {
+      method: 'POST',
+      headers: {'X-Caller-Token': 'not-the-secret'},
       body: JSON.stringify({})
     });
     expect(res.status).toBe(401);
