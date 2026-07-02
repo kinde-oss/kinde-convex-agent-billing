@@ -97,16 +97,17 @@ export function effectiveBudget(
     budget.periodEnd !== null &&
     now >= budget.periodEnd
   ) {
-    let start = budget.periodStart;
-    let end = budget.periodEnd;
-    while (now >= end) {
-      start = end;
-      end += budget.periodLengthMs;
+    const periodLengthMs = budget.periodLengthMs;
+    if (periodLengthMs <= 0) {
+      fail('invalid_period', 'periodLengthMs must be greater than 0.');
     }
+    // O(1) advance: the number of whole periods elapsed since the window ended,
+    // then the current window that contains `now`.
+    const elapsed = Math.floor((now - budget.periodEnd) / periodLengthMs) + 1;
     return {
       remaining: budget.periodCap,
-      periodStart: start,
-      periodEnd: end,
+      periodStart: budget.periodEnd + (elapsed - 1) * periodLengthMs,
+      periodEnd: budget.periodEnd + elapsed * periodLengthMs,
       rolled: true
     };
   }

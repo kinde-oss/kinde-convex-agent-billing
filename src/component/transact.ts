@@ -1,4 +1,5 @@
 import {v, ConvexError} from 'convex/values';
+import type {Infer} from 'convex/values';
 import {
   action,
   internalMutation,
@@ -23,6 +24,8 @@ const transactionDoc = schema.tables.transactions.validator.extend({
   _id: v.id('transactions'),
   _creationTime: v.number()
 });
+
+type TransactionStatus = Infer<typeof transactionStatusValidator>;
 
 /** Statuses that count toward a per-period cap (in-flight or settled spend). */
 const PERIOD_STATUSES = new Set(['pending', 'approved', 'executed']);
@@ -62,10 +65,14 @@ async function requestPolicyCheck(
       policy.periodLengthMs !== null &&
       now >= windowEnd
     ) {
-      while (now >= windowEnd) {
-        windowStart = windowEnd;
-        windowEnd += policy.periodLengthMs;
+      const periodLengthMs = policy.periodLengthMs;
+      if (periodLengthMs <= 0) {
+        fail('invalid_period', 'periodLengthMs must be greater than 0.');
       }
+      // O(1) advance to the window that contains `now` (mirrors effectiveBudget).
+      const elapsed = Math.floor((now - windowEnd) / periodLengthMs) + 1;
+      windowStart = windowEnd + (elapsed - 1) * periodLengthMs;
+      windowEnd = windowEnd + elapsed * periodLengthMs;
     }
     const rows = await ctx.db
       .query('transactions')
@@ -258,13 +265,41 @@ export const getInternal = internalQuery({
   }
 });
 
-/** Flip an approved transaction to executed and audit the transition. */
+/**
+ * Atomically claim an approved transaction for execution (approved → executing).
+ * Convex mutations are serializable, so of two concurrent executes only one
+ * observes `approved` and wins the claim; the other observes `executing` and
+ * gets `claimed:false`, so it never submits the outbound Kinde call. This is the
+ * concurrency guard that makes `execute` safe against duplicate execution.
+ */
+export const claim = internalMutation({
+  args: {transactionId: v.id('transactions')},
+  returns: v.object({
+    claimed: v.boolean(),
+    status: transactionStatusValidator
+  }),
+  handler: async (ctx, args) => {
+    const tx = await ctx.db.get('transactions', args.transactionId);
+    if (tx === null) {
+      fail('transaction_not_found', 'No such transaction.');
+    }
+    if (tx.status !== 'approved') {
+      return {claimed: false, status: tx.status};
+    }
+    await ctx.db.patch('transactions', args.transactionId, {
+      status: 'executing'
+    });
+    return {claimed: true, status: 'executing' as const};
+  }
+});
+
+/** Flip a claimed (executing) transaction to executed and audit the transition. */
 export const markExecuted = internalMutation({
   args: {transactionId: v.id('transactions')},
   returns: v.null(),
   handler: async (ctx, args) => {
     const tx = await ctx.db.get('transactions', args.transactionId);
-    if (tx === null || tx.status !== 'approved') {
+    if (tx === null || tx.status !== 'executing') {
       return null;
     }
     await ctx.db.patch('transactions', args.transactionId, {
@@ -283,13 +318,13 @@ export const markExecuted = internalMutation({
   }
 });
 
-/** Flip an approved transaction to failed and audit the transition. */
+/** Flip a claimed (executing) transaction to failed and audit the transition. */
 export const markFailed = internalMutation({
   args: {transactionId: v.id('transactions'), failureReason: v.string()},
   returns: v.null(),
   handler: async (ctx, args) => {
     const tx = await ctx.db.get('transactions', args.transactionId);
-    if (tx === null || tx.status !== 'approved') {
+    if (tx === null || tx.status !== 'executing') {
       return null;
     }
     await ctx.db.patch('transactions', args.transactionId, {
@@ -330,14 +365,18 @@ function reasonOf(error: unknown): string {
  * run inside a mutation: a `plan_change` calls the Phase 5 `kinde.changePlan`
  * action; `credit`/`cancellation` have no verified Kinde endpoint here, so they
  * execute locally (recorded + audited intent only — no invented Kinde call).
- * Persistence of the resulting status flip goes through an internalMutation
- * (the action → internalMutation split). On any error the transaction flips to
- * `failed`, never leaving partial state.
+ *
+ * Concurrency: the transaction is atomically claimed (approved → executing) via
+ * an internalMutation BEFORE any outbound call, so two concurrent executes
+ * cannot both submit the same plan change — the loser observes `executing` and
+ * exits early without calling Kinde. Persistence of the resulting status flip
+ * goes through internalMutations (the action → internalMutation split). On any
+ * error the transaction flips to `failed`, never leaving partial state.
  */
 export const execute = action({
   args: {transactionId: v.id('transactions')},
   returns: v.object({status: transactionStatusValidator}),
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{status: TransactionStatus}> => {
     const tx = await ctx.runQuery(internal.transact.getInternal, {
       transactionId: args.transactionId
     });
@@ -347,13 +386,23 @@ export const execute = action({
     if (tx.status !== 'approved') {
       fail('not_approved', `Transaction is "${tx.status}", not "approved".`);
     }
-    if (tx.type === 'plan_change') {
-      if (tx.planCode === null) {
-        fail(
-          'plan_change_requires_plan_code',
-          'A plan_change transaction requires a planCode.'
-        );
-      }
+    if (tx.type === 'plan_change' && tx.planCode === null) {
+      fail(
+        'plan_change_requires_plan_code',
+        'A plan_change transaction requires a planCode.'
+      );
+    }
+
+    // Atomically claim before any outbound call. If another execute already
+    // took it, exit early with the current status and do NOT call Kinde.
+    const claimed = await ctx.runMutation(internal.transact.claim, {
+      transactionId: args.transactionId
+    });
+    if (!claimed.claimed) {
+      return {status: claimed.status};
+    }
+
+    if (tx.type === 'plan_change' && tx.planCode !== null) {
       try {
         await ctx.runAction(api.kinde.changePlan, {
           principalType: tx.principalType,
@@ -457,6 +506,12 @@ export const setPolicy = mutation({
       }
       if (periodEnd <= periodStart) {
         fail('invalid_period', 'periodEnd must be greater than periodStart.');
+      }
+      if (periodLengthMs === null || periodLengthMs <= 0) {
+        fail(
+          'invalid_period',
+          'A rolling period window requires periodLengthMs > 0.'
+        );
       }
     }
 

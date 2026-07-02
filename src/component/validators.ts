@@ -35,12 +35,15 @@ export const transactionTypeValidator = v.union(
 
 /**
  * A transaction's lifecycle status. Status only ever moves forward:
- * pending → approved → executed → compensated, or pending → rejected, or
- * approved → failed.
+ * pending → approved → executing → executed → compensated, or
+ * pending → rejected, or executing → failed. `executing` is the claimed state:
+ * `execute` atomically flips approved → executing before any outbound Kinde
+ * call, so a concurrent duplicate execute cannot submit the same plan change.
  */
 export const transactionStatusValidator = v.union(
   v.literal('pending'),
   v.literal('approved'),
+  v.literal('executing'),
   v.literal('rejected'),
   v.literal('executed'),
   v.literal('failed'),

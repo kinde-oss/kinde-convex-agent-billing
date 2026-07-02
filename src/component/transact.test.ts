@@ -1,5 +1,5 @@
 import {afterEach, beforeEach, describe, expect, test, vi} from 'vitest';
-import {api} from './_generated/api.js';
+import {api, internal} from './_generated/api.js';
 import {expectFail, initConvexTest} from './setup.test.js';
 
 const ISSUER = 'https://acme.kinde.com';
@@ -437,5 +437,99 @@ describe('transact', () => {
       status: 'rejected'
     });
     expect(rejectedOnly).toHaveLength(0);
+  });
+
+  test('claim is the concurrency guard: a second claim on an executing tx does not re-enter', async () => {
+    mockFetch(() => undefined);
+    const t = initConvexTest();
+    await mapCustomer(t);
+    const txId = await t.mutation(api.transact.request, {
+      principalType: 'org',
+      principalId: 'org_acme',
+      type: 'plan_change',
+      planCode: 'pro'
+    });
+
+    const first = await t.mutation(internal.transact.claim, {
+      transactionId: txId
+    });
+    expect(first).toEqual({claimed: true, status: 'executing'});
+
+    // A second claim observes 'executing' and does not re-enter.
+    const second = await t.mutation(internal.transact.claim, {
+      transactionId: txId
+    });
+    expect(second.claimed).toBe(false);
+    expect(second.status).toBe('executing');
+  });
+
+  test('a duplicate execute does not submit a second Kinde plan change', async () => {
+    const calls = mockFetch((url) =>
+      url === AGREEMENTS_URL ? jsonResponse({id: 'agr-2'}) : undefined
+    );
+    const t = initConvexTest();
+    await mapCustomer(t);
+    const txId = await t.mutation(api.transact.request, {
+      principalType: 'org',
+      principalId: 'org_acme',
+      type: 'plan_change',
+      planCode: 'pro'
+    });
+
+    const first = await t.action(api.transact.execute, {transactionId: txId});
+    expect(first.status).toBe('executed');
+    const agreementsCalls = () =>
+      calls.filter((c) => c.url === AGREEMENTS_URL).length;
+    expect(agreementsCalls()).toBe(1);
+
+    // A second execute on the now-executed tx must not call Kinde again.
+    await expectFail(
+      t.action(api.transact.execute, {transactionId: txId}),
+      'not_approved'
+    );
+    expect(agreementsCalls()).toBe(1);
+  });
+
+  test('setPolicy: a period window without a positive periodLengthMs is rejected', async () => {
+    mockFetch(() => undefined);
+    const t = initConvexTest();
+    // Valid window (end > start) but no periodLengthMs.
+    await expectFail(
+      t.mutation(api.transact.setPolicy, {
+        principalType: 'org',
+        principalId: 'org_acme',
+        perPeriodCap: 100,
+        periodStart: 0,
+        periodEnd: 1000,
+        requireApproval: false
+      }),
+      'invalid_period'
+    );
+    // Zero periodLengthMs.
+    await expectFail(
+      t.mutation(api.transact.setPolicy, {
+        principalType: 'org',
+        principalId: 'org_acme',
+        perPeriodCap: 100,
+        periodStart: 0,
+        periodEnd: 1000,
+        periodLengthMs: 0,
+        requireApproval: false
+      }),
+      'invalid_period'
+    );
+    // Negative periodLengthMs.
+    await expectFail(
+      t.mutation(api.transact.setPolicy, {
+        principalType: 'org',
+        principalId: 'org_acme',
+        perPeriodCap: 100,
+        periodStart: 0,
+        periodEnd: 1000,
+        periodLengthMs: -5,
+        requireApproval: false
+      }),
+      'invalid_period'
+    );
   });
 });

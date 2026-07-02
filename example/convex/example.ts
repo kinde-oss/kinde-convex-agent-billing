@@ -60,6 +60,7 @@ const txType = v.union(
 const txStatus = v.union(
   v.literal('pending'),
   v.literal('approved'),
+  v.literal('executing'),
   v.literal('rejected'),
   v.literal('executed'),
   v.literal('failed'),

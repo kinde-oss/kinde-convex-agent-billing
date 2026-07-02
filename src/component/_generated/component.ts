@@ -346,6 +346,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           status:
             | "pending"
             | "approved"
+            | "executing"
             | "rejected"
             | "executed"
             | "failed"
@@ -377,6 +378,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           status:
             | "pending"
             | "approved"
+            | "executing"
             | "rejected"
             | "executed"
             | "failed"
@@ -395,6 +397,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           status?:
             | "pending"
             | "approved"
+            | "executing"
             | "rejected"
             | "executed"
             | "failed"
@@ -420,6 +423,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
           status:
             | "pending"
             | "approved"
+            | "executing"
             | "rejected"
             | "executed"
             | "failed"
