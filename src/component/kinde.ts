@@ -366,6 +366,79 @@ export const recordPlanChanged = internalMutation({
   }
 });
 
+/**
+ * Persist the (possibly new) agreement id Kinde returns from a plan change, so
+ * later `pushUsage` calls do not use a stale `customer_agreement_id`.
+ */
+export const setCustomerAgreementId = internalMutation({
+  args: {
+    principalType: principalTypeValidator,
+    principalId: v.string(),
+    customerAgreementId: v.string()
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query('kindeCustomers')
+      .withIndex('by_principal', (q) =>
+        q
+          .eq('principalType', args.principalType)
+          .eq('principalId', args.principalId)
+      )
+      .unique();
+    if (existing !== null) {
+      await ctx.db.patch('kindeCustomers', existing._id, {
+        customerAgreementId: args.customerAgreementId
+      });
+    }
+    return null;
+  }
+});
+
+/**
+ * Zero a stale kinde-source budget when its entitlement is no longer present in
+ * Kinde (e.g. a downgrade). The row is kept (observers still see a zeroed kinde
+ * budget) so `gate.check`/`usage.record` stop honoring the old allowance. A
+ * `local` budget is never touched — Kinde is not its source of truth.
+ */
+export const clearEntitlement = internalMutation({
+  args: {
+    principalType: principalTypeValidator,
+    principalId: v.string(),
+    orgCode: nullableString,
+    unit: v.string()
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const budget = await ctx.db
+      .query('budgets')
+      .withIndex('by_principal', (q) =>
+        q
+          .eq('principalType', args.principalType)
+          .eq('principalId', args.principalId)
+          .eq('orgCode', args.orgCode)
+          .eq('unit', args.unit)
+      )
+      .unique();
+    if (budget === null || budget.source !== 'kinde') {
+      return null;
+    }
+    await ctx.db.patch('budgets', budget._id, {
+      remaining: 0,
+      periodCap: 0
+    });
+    await writeAudit(ctx, {
+      eventType: 'kinde.entitlement_cleared',
+      principalType: args.principalType,
+      principalId: args.principalId,
+      orgCode: args.orgCode,
+      unit: args.unit,
+      detail: {remaining: 0}
+    });
+    return null;
+  }
+});
+
 // --- public mutation: wire a principal to its Kinde customer ---
 
 /** Upsert the Kinde customer mapping for a principal. */
@@ -610,6 +683,14 @@ export const syncEntitlements = action({
     }
 
     if (match === null) {
+      // The feature is no longer entitled (e.g. a downgrade). Zero any stale
+      // kinde-source budget so it stops honoring the old allowance.
+      await ctx.runMutation(internal.kinde.clearEntitlement, {
+        principalType: args.principalType,
+        principalId: args.principalId,
+        orgCode: args.orgCode ?? null,
+        unit: args.unit
+      });
       return {found: false, remaining: null, limit: null};
     }
     const remaining = Math.max(match.limit - match.consumed, 0);
@@ -671,7 +752,18 @@ export const changePlan = action({
     if (!response.ok) {
       await kindeError(response, url, 'kinde_agreement_failed');
     }
-    await readJson(response, url, 'kinde_response_malformed');
+    const json = await readJson(response, url, 'kinde_response_malformed');
+    // Persist the (possibly new) agreement id so later pushUsage is not stale.
+    if (typeof json === 'object' && json !== null) {
+      const id = field(json, 'id');
+      if (typeof id === 'string') {
+        await ctx.runMutation(internal.kinde.setCustomerAgreementId, {
+          principalType: args.principalType,
+          principalId: args.principalId,
+          customerAgreementId: id
+        });
+      }
+    }
     await ctx.runMutation(internal.kinde.recordPlanChanged, {
       principalType: args.principalType,
       principalId: args.principalId,

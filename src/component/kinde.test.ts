@@ -483,4 +483,156 @@ describe('kinde integration', () => {
     expect(rows[0].customerId).toBe('cust-2');
     expect(rows[0].customerAgreementId).toBe('agr-9');
   });
+
+  test('changePlan persists the agreement id Kinde returns', async () => {
+    mockFetch((url) =>
+      url === AGREEMENTS_URL ? jsonResponse({id: 'agr-new'}) : undefined
+    );
+    const t = initConvexTest();
+    await mapCustomer(t); // customerAgreementId starts at 'agr-1'.
+
+    await t.action(api.kinde.changePlan, {
+      principalType: 'org',
+      principalId: 'org_acme',
+      planCode: 'pro'
+    });
+
+    const rows = await t.run(async (ctx) =>
+      ctx.db
+        .query('kindeCustomers')
+        .withIndex('by_principal', (q) =>
+          q.eq('principalType', 'org').eq('principalId', 'org_acme')
+        )
+        .collect()
+    );
+    expect(rows[0].customerAgreementId).toBe('agr-new');
+  });
+
+  test('syncEntitlements zeroes a stale kinde budget when the feature is removed', async () => {
+    const t = initConvexTest();
+    await mapCustomer(t);
+
+    // First sync: the feature is entitled -> hydrate a kinde budget.
+    mockFetch((url) =>
+      url.startsWith(ENTITLEMENTS_PREFIX)
+        ? jsonResponse({
+            code: 'OK',
+            plans: [],
+            has_more: false,
+            entitlements: [
+              {
+                id: 'e1',
+                feature_code: 'tokens',
+                entitlement_limit_max: 1000,
+                entitlement_limit_min: 0
+              }
+            ]
+          })
+        : undefined
+    );
+    const synced = await t.action(api.kinde.syncEntitlements, {
+      principalType: 'org',
+      principalId: 'org_acme',
+      unit: 'tokens',
+      billingFeatureCode: 'tokens'
+    });
+    expect(synced).toEqual({found: true, remaining: 1000, limit: 1000});
+
+    // Second sync: the feature is gone (downgrade). The kinde budget is zeroed.
+    mockFetch((url) =>
+      url.startsWith(ENTITLEMENTS_PREFIX)
+        ? jsonResponse({
+            code: 'OK',
+            plans: [],
+            has_more: false,
+            entitlements: [
+              {
+                id: 'e2',
+                feature_code: 'images',
+                entitlement_limit_max: 5,
+                entitlement_limit_min: 0
+              }
+            ]
+          })
+        : undefined
+    );
+    const gone = await t.action(api.kinde.syncEntitlements, {
+      principalType: 'org',
+      principalId: 'org_acme',
+      unit: 'tokens',
+      billingFeatureCode: 'tokens'
+    });
+    expect(gone).toEqual({found: false, remaining: null, limit: null});
+
+    // The kinde budget row is kept but zeroed (source unchanged).
+    const budget = await t.query(api.budgets.get, {
+      principalType: 'org',
+      principalId: 'org_acme',
+      unit: 'tokens'
+    });
+    expect(budget?.source).toBe('kinde');
+    expect(budget?.remaining).toBe(0);
+
+    // gate.check now denies and usage.record fails against the zeroed budget.
+    const decision = await t.mutation(api.enforce.check, {
+      principalType: 'org',
+      principalId: 'org_acme',
+      unit: 'tokens',
+      requested: 1
+    });
+    expect(decision.decision).toBe('deny');
+    await expectFail(
+      t.mutation(api.usage.record, {
+        principalType: 'org',
+        principalId: 'org_acme',
+        unit: 'tokens',
+        quantity: 1,
+        idempotencyKey: 'k1'
+      }),
+      'budget_exceeded'
+    );
+  });
+
+  test('syncEntitlements leaves a source:local budget untouched when the feature is absent', async () => {
+    const t = initConvexTest();
+    await mapCustomer(t);
+    // A LOCAL budget for the same principal/unit (not managed by Kinde).
+    await t.mutation(api.budgets.set, {
+      principalType: 'org',
+      principalId: 'org_acme',
+      unit: 'tokens',
+      remaining: 50
+    });
+    mockFetch((url) =>
+      url.startsWith(ENTITLEMENTS_PREFIX)
+        ? jsonResponse({
+            code: 'OK',
+            plans: [],
+            has_more: false,
+            entitlements: [
+              {
+                id: 'e2',
+                feature_code: 'images',
+                entitlement_limit_max: 5,
+                entitlement_limit_min: 0
+              }
+            ]
+          })
+        : undefined
+    );
+    await t.action(api.kinde.syncEntitlements, {
+      principalType: 'org',
+      principalId: 'org_acme',
+      unit: 'tokens',
+      billingFeatureCode: 'tokens'
+    });
+
+    const budget = await t.query(api.budgets.get, {
+      principalType: 'org',
+      principalId: 'org_acme',
+      unit: 'tokens'
+    });
+    expect(budget?.source).toBe('local');
+    expect(budget?.remaining).toBe(50);
+  });
 });

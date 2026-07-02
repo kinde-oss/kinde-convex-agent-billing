@@ -57,6 +57,9 @@ export const set = mutation({
         'periodLengthMs requires periodCap, periodStart, and periodEnd to be set.'
       );
     }
+    if (periodLengthMs !== null && periodLengthMs <= 0) {
+      fail('invalid_period', 'periodLengthMs must be greater than 0.');
+    }
     const anyPeriodField =
       periodCap !== null ||
       periodStart !== null ||

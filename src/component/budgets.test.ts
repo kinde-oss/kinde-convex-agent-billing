@@ -131,4 +131,36 @@ describe('budgets', () => {
       'invalid_period'
     );
   });
+
+  test('HARDENING: a non-positive periodLengthMs fails invalid_period', async () => {
+    const t = initConvexTest();
+    // Zero length.
+    await expectFail(
+      t.mutation(api.budgets.set, {
+        principalType: 'user',
+        principalId: 'user_alice',
+        unit: 'tokens',
+        remaining: 10,
+        periodCap: 100,
+        periodStart: 0,
+        periodEnd: HOUR,
+        periodLengthMs: 0
+      }),
+      'invalid_period'
+    );
+    // Negative length.
+    await expectFail(
+      t.mutation(api.budgets.set, {
+        principalType: 'user',
+        principalId: 'user_alice',
+        unit: 'tokens',
+        remaining: 10,
+        periodCap: 100,
+        periodStart: 0,
+        periodEnd: HOUR,
+        periodLengthMs: -1
+      }),
+      'invalid_period'
+    );
+  });
 });
