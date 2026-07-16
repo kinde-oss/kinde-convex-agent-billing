@@ -33,6 +33,15 @@ const usageEventDoc = schema.tables.usageEvents.validator.extend({
  * budget decrement, and the mandate's `budgetSpent` bump all commit together in
  * this one serializable mutation, so revoking the mandate kills its authority on
  * the next call (reactive). With no `mandateId` the path is exactly Phases 1–3.
+ *
+ * A mandate-bound call MUST also pass `callerAgentSubject` (the verified
+ * caller's subject); it is checked against the mandate's bound `agentSubject` so
+ * a mandate cannot be replayed by an agent it was not minted for — the two names
+ * are deliberately distinct: one is claimed by the caller, the other is signed
+ * into the mandate at mint time. Note this check sits after the
+ * idempotency early-return by design: a replay of an already-authorized spend
+ * returns the original outcome and re-decides nothing. Mandate `scope` is signed
+ * and stored but NOT enforced here — it is audit/metadata today.
  */
 export const record = mutation({
   args: {
@@ -43,7 +52,16 @@ export const record = mutation({
     quantity: v.number(),
     idempotencyKey: v.string(),
     correlationId: v.optional(nullableString),
-    mandateId: v.optional(v.id('mandates'))
+    mandateId: v.optional(v.id('mandates')),
+    /**
+     * The verified subject of the agent making this call — agent-auth's
+     * `VerifiedAgent.subject`. REQUIRED whenever `mandateId` is passed, so the
+     * mandate's bound `agentSubject` can be re-checked at spend time; ignored
+     * otherwise. Named for the CALLER, not the mandate: this is the identity
+     * being asserted, and it is only trustworthy if it came from `verifyCaller`.
+     * Never accept it from client input.
+     */
+    callerAgentSubject: v.optional(v.string())
   },
   returns: v.object({
     status: usageStatusValidator,
@@ -105,6 +123,15 @@ export const record = mutation({
     let mandate: Doc<'mandates'> | null = null;
     if (args.mandateId !== undefined) {
       const secret = requireSigningSecret();
+      // A mandate names the agent it was minted for, so a mandate-bound spend
+      // must say who is spending. Fail closed rather than skip the check: an
+      // omitted subject is a caller that has not been through verifyCaller.
+      if (args.callerAgentSubject === undefined) {
+        fail(
+          'caller_subject_required',
+          'A mandate-bound record must supply callerAgentSubject: the verified subject of the calling agent.'
+        );
+      }
       mandate = await ctx.db.get('mandates', args.mandateId);
       if (mandate === null) {
         fail('mandate_not_found', 'No such mandate.');
@@ -112,6 +139,17 @@ export const record = mutation({
       const verdict = await verifyMandate(secret, mandate, now);
       if (!verdict.valid) {
         fail(`mandate_${verdict.code}`, verdict.reason);
+      }
+      // The mandate is bound to a specific agent subject at mint time and
+      // re-checked here at spend time, so a leaked mandate id cannot be replayed
+      // by another agent to bill usage against this principal. This is a
+      // distinct axis from the principal checks below: the principal is who gets
+      // billed, the mandate's agentSubject is who is allowed to do the billing.
+      if (mandate.agentSubject !== args.callerAgentSubject) {
+        fail(
+          'mandate_agent_subject_mismatch',
+          'The mandate authorizes a different agent.'
+        );
       }
       if (
         mandate.principalType !== args.principalType ||
@@ -236,9 +274,17 @@ export const getEvent = query({
 });
 
 /**
- * The most recent usage events for a principal, newest first. The principal
- * identity already scopes the rows, so no orgCode filter is needed. `limit` is
- * clamped to [1, 200].
+ * The most recent usage events for a principal, newest first. `limit` is clamped
+ * to [1, 200].
+ *
+ * PRINCIPAL-SCOPED, NOT ORG-SCOPED. `by_principal` is
+ * ['principalType','principalId','at'] — no orgCode — so this returns the
+ * principal's events across EVERY org they act in. That is deliberate (one
+ * principal's own history is one list), and it is the opposite of the spend
+ * path, where budgets are org-keyed and `usage.record` rejects a cross-tenant
+ * mandate. Do NOT build an org-scoped admin view on this: showing org A's admin
+ * this list leaks what the same principal did in org B. For a per-org read, use
+ * the `by_org_code` index (['orgCode','at']) instead.
  */
 export const listForPrincipal = query({
   args: {

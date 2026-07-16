@@ -49,6 +49,19 @@ function timeRange(
  * Read-only, paginated, filterable view over the audit log. NEVER writes — the
  * audit log is the source of truth.
  *
+ * DEPLOYMENT-WIDE BY DESIGN, AND THE MOST SENSITIVE READ IN THE COMPONENT:
+ * EVERY filter is optional, so an unfiltered call walks `by_at` across the whole
+ * deployment and returns every tenant's rows — spend amounts and balances,
+ * minted mandates and their agentSubjects, approver subjects, plan changes. It
+ * is an operator/admin view and is safe ONLY behind verified human/admin auth
+ * (the same bar as `webhooks.listRecent`, but this carries more). Unlike that
+ * one it has no route guard to fall back on: `registerRoutes` never exposes it,
+ * so the app wrapper is the ONLY thing standing in front of it. NEVER wire it to
+ * an unauthenticated public query, and never let a caller-supplied filter be the
+ * thing that scopes it — passing `orgCode` from request input is not tenant
+ * isolation, because omitting the arg simply returns everything. Bind the filter
+ * to the tenant the caller was VERIFIED to be in.
+ *
  * Filters are optional and combine with AND. The most selective available index
  * is chosen so that its equality fields constrain the query BEFORE pagination
  * (paginating the raw index and filtering afterwards would underfill pages while

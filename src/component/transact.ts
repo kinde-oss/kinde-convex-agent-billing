@@ -106,6 +106,13 @@ async function requestPolicyCheck(
  * amount; a `credit`/`cancellation` carries a positive `amount` and no plan.
  * Caps are enforced here (request time). The transaction starts `pending` when
  * the policy requires approval, else directly `approved` (ready to execute).
+ *
+ * NOT DEFAULT-DENY: with NO policy row for the principal there are no caps and
+ * no approval step, so the transaction is created already `approved` and is
+ * immediately executable. A principal only gets caps and human approval once
+ * `setPolicy` has run for it (`requireApproval: true`) — absence of policy is
+ * absence of restriction, not a safe default. Call `setPolicy` before any
+ * principal is allowed to request transactions.
  */
 export const request = mutation({
   args: {
@@ -568,6 +575,15 @@ export const get = query({
   }
 });
 
+/**
+ * A principal's transactions, optionally filtered by `status`. `limit` is
+ * clamped to [1, 200].
+ *
+ * PRINCIPAL-SCOPED, NOT ORG-SCOPED: `by_principal` carries no orgCode, so this
+ * spans every org the principal transacts in. The transactions table has no org
+ * index, so an org-scoped view must filter `orgCode` in the app after reading.
+ * Note the transaction caps in `setPolicy` are per-principal too, not per-org.
+ */
 export const listForPrincipal = query({
   args: {
     principalType: principalTypeValidator,

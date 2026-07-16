@@ -186,7 +186,11 @@ export const recordUsage = mutation({
     quantity: v.number(),
     idempotencyKey: v.string(),
     correlationId: v.optional(nullableString),
-    mandateId: v.optional(v.string())
+    mandateId: v.optional(v.string()),
+    // Required by the component whenever `mandateId` is set. In production this
+    // MUST be the subject proved by `verifyCaller` (see `resolveSubject`), never
+    // an arg the caller chose — that would defeat the mandate's agent binding.
+    callerAgentSubject: v.optional(v.string())
   },
   returns: v.object({
     status: v.union(v.literal('applied'), v.literal('deduplicated')),
@@ -206,7 +210,10 @@ export const recordUsage = mutation({
         : {correlationId: args.correlationId}),
       ...(args.mandateId === undefined
         ? {}
-        : {mandateId: args.mandateId as RecordArgs['mandateId']})
+        : {mandateId: args.mandateId as RecordArgs['mandateId']}),
+      ...(args.callerAgentSubject === undefined
+        ? {}
+        : {callerAgentSubject: args.callerAgentSubject})
     });
   }
 });
@@ -577,7 +584,18 @@ const auditRow = v.object({
   )
 });
 
-/** A paginated, filterable read of the audit trail (direct component-call style). */
+/**
+ * A paginated, filterable read of the audit trail (direct component-call style).
+ *
+ * EXAMPLE ONLY — INSECURE AS WRITTEN, AND THE WORST OFFENDER IN THIS FILE. It is
+ * a PUBLIC query that forwards every filter straight from client input, and each
+ * one is optional — so calling it with no filters at all returns the ENTIRE audit
+ * log for EVERY tenant: spend, balances, mandate agentSubjects, approver
+ * subjects. The optional filters are not tenant isolation; they are a convenience
+ * a caller can simply decline. In production this MUST authenticate a human/admin
+ * first and then bind `orgCode`/principal to the VERIFIED session — never accept
+ * them as args like this. See the Security model section of the README.
+ */
 export const recentAudit = query({
   args: {
     paginationOpts: paginationOptsValidator,

@@ -350,7 +350,8 @@ describe('usage.record — the spine', () => {
       unit: 'tokens',
       quantity: 20,
       idempotencyKey: 'k1',
-      mandateId
+      mandateId,
+      callerAgentSubject: 'agent_bot'
     });
     expect(result.status).toBe('applied');
     expect(result.remaining).toBe(80);
@@ -375,7 +376,8 @@ describe('usage.record — the spine', () => {
       unit: 'tokens',
       quantity: 20,
       idempotencyKey: 'k1',
-      mandateId
+      mandateId,
+      callerAgentSubject: 'agent_bot'
     });
     // 20 more would exceed the mandate's remaining (30 - 20 = 10), even though
     // the principal budget still has 980.
@@ -386,7 +388,8 @@ describe('usage.record — the spine', () => {
         unit: 'tokens',
         quantity: 20,
         idempotencyKey: 'k2',
-        mandateId
+        mandateId,
+        callerAgentSubject: 'agent_bot'
       }),
       'mandate_budget_exceeded'
     );
@@ -412,7 +415,8 @@ describe('usage.record — the spine', () => {
       unit: 'tokens',
       quantity: 10,
       idempotencyKey: 'k1',
-      mandateId
+      mandateId,
+      callerAgentSubject: 'agent_bot'
     });
     await t.mutation(api.mandates.revoke, {mandateId});
 
@@ -423,7 +427,8 @@ describe('usage.record — the spine', () => {
         unit: 'tokens',
         quantity: 10,
         idempotencyKey: 'k2',
-        mandateId
+        mandateId,
+        callerAgentSubject: 'agent_bot'
       }),
       'mandate_revoked'
     );
@@ -443,7 +448,8 @@ describe('usage.record — the spine', () => {
         unit: 'tokens',
         quantity: 10,
         idempotencyKey: 'k1',
-        mandateId
+        mandateId,
+        callerAgentSubject: 'agent_bot'
       }),
       'mandate_principal_mismatch'
     );
@@ -461,7 +467,8 @@ describe('usage.record — the spine', () => {
         unit: 'tokens',
         quantity: 10,
         idempotencyKey: 'k1',
-        mandateId
+        mandateId,
+        callerAgentSubject: 'agent_bot'
       }),
       'mandate_unit_mismatch'
     );
@@ -501,10 +508,87 @@ describe('usage.record — the spine', () => {
         unit: 'tokens',
         quantity: 10,
         idempotencyKey: 'k1',
-        mandateId
+        mandateId,
+        callerAgentSubject: 'agent_bot'
       }),
       'mandate_tenant_mismatch'
     );
+  });
+
+  // --- Mandate agent binding (callerAgentSubject vs mandate.agentSubject) ---
+
+  test('a mandate replayed by a different agent fails mandate_agent_subject_mismatch and records nothing', async () => {
+    const t = initConvexTest();
+    await setBudget(t, 100);
+    // Minted for agent_bot; the principal, org, unit and quantity all match, so
+    // the agent binding is the only thing standing between agent_evil and a
+    // spend against user_alice's budget.
+    const mandateId = await mintMandate(t, 50);
+
+    await expectFail(
+      t.mutation(api.usage.record, {
+        principalType: 'user',
+        principalId: 'user_alice',
+        unit: 'tokens',
+        quantity: 10,
+        idempotencyKey: 'k1',
+        mandateId,
+        callerAgentSubject: 'agent_evil'
+      }),
+      'mandate_agent_subject_mismatch'
+    );
+
+    expect(await remainingOf(t)).toBe(100);
+    const mandate = await t.query(api.mandates.get, {mandateId});
+    expect(mandate?.budgetSpent).toBe(0);
+    expect(await counts(t)).toEqual({
+      usageEvents: 0,
+      idempotencyKeys: 0,
+      recorded: 0
+    });
+  });
+
+  test('a mandate-bound record with no callerAgentSubject fails closed and records nothing', async () => {
+    const t = initConvexTest();
+    await setBudget(t, 100);
+    const mandateId = await mintMandate(t, 50);
+
+    await expectFail(
+      t.mutation(api.usage.record, {
+        principalType: 'user',
+        principalId: 'user_alice',
+        unit: 'tokens',
+        quantity: 10,
+        idempotencyKey: 'k1',
+        mandateId
+      }),
+      'caller_subject_required'
+    );
+
+    expect(await remainingOf(t)).toBe(100);
+    expect(await counts(t)).toEqual({
+      usageEvents: 0,
+      idempotencyKeys: 0,
+      recorded: 0
+    });
+  });
+
+  test('callerAgentSubject is ignored on the unbound path (no mandateId)', async () => {
+    const t = initConvexTest();
+    await setBudget(t, 100);
+
+    // No mandate means no agent binding to check, so a subject that matches no
+    // mandate is simply irrelevant — the unbound path is unchanged.
+    const result = await t.mutation(api.usage.record, {
+      principalType: 'user',
+      principalId: 'user_alice',
+      unit: 'tokens',
+      quantity: 10,
+      idempotencyKey: 'k1',
+      callerAgentSubject: 'agent_nobody'
+    });
+    expect(result.status).toBe('applied');
+    expect(result.remaining).toBe(90);
   });
 
   test('idempotency scope is tenant-separated: the same key under two orgs does not collide', async () => {

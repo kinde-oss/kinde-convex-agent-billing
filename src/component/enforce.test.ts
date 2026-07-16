@@ -1,4 +1,4 @@
-import {describe, expect, test} from 'vitest';
+import {describe, expect, test, vi} from 'vitest';
 import {api} from './_generated/api.js';
 import {expectFail, initConvexTest} from './setup.test.js';
 
@@ -211,6 +211,60 @@ describe('enforce.check', () => {
       }),
       'budget_exceeded'
     );
+  });
+
+  test('gate/record DISAGREEMENT: the gate is mandate-blind, so allow does not imply a mandate-bound record succeeds', async () => {
+    const t = initConvexTest();
+    vi.stubEnv('MANDATE_SIGNING_SECRET', 'test-mandate-secret');
+    await setBudget(t, 1000);
+
+    // The mandate is a SECOND bound the gate never sees: check takes no
+    // mandateId and never reads the mandates table.
+    const mandateId = await t.mutation(api.mandates.mint, {
+      principalType: 'user',
+      principalId: 'user_alice',
+      agentSubject: 'agent_bot',
+      unit: 'tokens',
+      scope: ['chat.completions'],
+      budgetCap: 10,
+      notAfter: Date.now() + HOUR
+    });
+
+    // The principal budget has 1000, so the gate allows 500 — truthfully, on the
+    // only axis it knows about.
+    const gate = await t.mutation(api.enforce.check, {
+      principalType: 'user',
+      principalId: 'user_alice',
+      unit: 'tokens',
+      requested: 500
+    });
+    expect(gate.decision).toBe('allow');
+    expect(gate.remaining).toBe(1000);
+
+    // record enforces the mandate's remaining (10) and rejects the very request
+    // the gate just allowed. This pins the documented contract; if check ever
+    // becomes mandate-aware, this test must change and so must the README.
+    await expectFail(
+      t.mutation(api.usage.record, {
+        principalType: 'user',
+        principalId: 'user_alice',
+        unit: 'tokens',
+        quantity: 500,
+        idempotencyKey: 'k1',
+        mandateId,
+        callerAgentSubject: 'agent_bot'
+      }),
+      'mandate_budget_exceeded'
+    );
+
+    // Nothing moved: the budget the gate reported is untouched.
+    const budget = await t.query(api.budgets.get, {
+      principalType: 'user',
+      principalId: 'user_alice',
+      unit: 'tokens'
+    });
+    expect(budget?.remaining).toBe(1000);
+    vi.unstubAllEnvs();
   });
 
   test('audit correlationId: passed-in is propagated; absent is generated', async () => {

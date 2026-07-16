@@ -527,6 +527,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         "mutation",
         "internal",
         {
+          callerAgentSubject?: string;
           correlationId?: string | null;
           idempotencyKey: string;
           mandateId?: string;

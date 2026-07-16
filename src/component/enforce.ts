@@ -29,10 +29,32 @@ type Decision = Infer<typeof decisionValidator>;
  *
  * gate.check NEVER mutates the budget — it reports a decision and audits it, but
  * only `usage.record` decrements. Both read the same `effectiveBudget`, so they
- * agree at a single instant (invariant): a request `check` calls `allow` will
- * not be rejected by `record`'s budget check at that instant (record then
- * enforces the decrement atomically), and a request `check` calls `deny`
- * (exhausted) is the same request `record` rejects with `budget_exceeded`.
+ * agree at a single instant ON THE PRINCIPAL BUDGET (invariant): a request
+ * `check` calls `allow` will not be rejected by `record`'s budget check at that
+ * instant (record then enforces the decrement atomically), and a request `check`
+ * calls `deny` (exhausted) is the same request `record` rejects with
+ * `budget_exceeded`.
+ *
+ * THE GATE IS BUDGET-ONLY AND MANDATE-BLIND. It takes no `mandateId` and never
+ * reads the mandates table, so it sees only the principal budget. A mandate is a
+ * SECOND, independent bound (`budgetCap - budgetSpent`) that only `usage.record`
+ * enforces. So `allow` here does NOT imply a mandate-bound record will succeed:
+ * with a principal budget of 1000 and a mandate with 10 left, `check` allows 500
+ * and `record` then rejects it with `mandate_budget_exceeded`. An agent spending
+ * under a mandate must treat the
+ * mandate's own remaining as the real ceiling — read it via `mandates.get` — and
+ * not infer authority from this gate alone.
+ *
+ * THE CONTRACT WITH `usage.record` — check is ADVISORY and RESERVES NOTHING.
+ * It holds no budget for the caller, so an `allow` is a statement about that
+ * instant, not a promise about the next one. Two concurrent checks against the
+ * same budget can both return `allow` for a request only one of them can afford;
+ * neither is wrong, because `usage.record` is the real enforcement point — its
+ * atomic, idempotent decrement is what serializes the winner and rejects the
+ * loser with `budget_exceeded`. So: never treat `allow` as authority to spend
+ * without recording, and on `degrade` record NO MORE than the returned
+ * `remaining` (a `degrade` is "you can have this much, not what you asked for").
+ * Calling check without ever calling record bills nobody.
  */
 export const check = mutation({
   args: {

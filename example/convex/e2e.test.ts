@@ -176,7 +176,8 @@ describe('end-to-end billing lifecycle', () => {
       unit: 'tokens',
       quantity: 30,
       idempotencyKey: 'k1',
-      mandateId
+      mandateId,
+      callerAgentSubject: 'agent_bot'
     });
     expect(applied).toMatchObject({status: 'applied', remaining: 970});
 
@@ -198,7 +199,8 @@ describe('end-to-end billing lifecycle', () => {
         unit: 'tokens',
         quantity: 80,
         idempotencyKey: 'k2',
-        mandateId
+        mandateId,
+        callerAgentSubject: 'agent_bot'
       }),
       'mandate_budget_exceeded'
     );
@@ -212,7 +214,8 @@ describe('end-to-end billing lifecycle', () => {
         unit: 'tokens',
         quantity: 10,
         idempotencyKey: 'k3',
-        mandateId
+        mandateId,
+        callerAgentSubject: 'agent_bot'
       }),
       'mandate_revoked'
     );

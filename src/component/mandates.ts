@@ -194,6 +194,18 @@ export function requireSigningSecret(): string {
  * Mint an HMAC-signed spend mandate. The signature is computed over the
  * canonical fields with MANDATE_SIGNING_SECRET, so the mandate is later
  * verifiable without any external call.
+ *
+ * `scope` IS NOT ENFORCED TODAY. It is signed (so it cannot be tampered with
+ * after minting) and stored, and `intersectMandate` can attenuate it, but
+ * `usage.record` does not check a spend against it — a mandate scoped to
+ * `['chat.completions']` will not reject a spend for anything else. Treat scope
+ * as audit/metadata and enforce it in the app layer if you need it.
+ *
+ * `agentSubject` binds this mandate to ONE agent, and is the axis `usage.record`
+ * re-checks at spend time against the caller-asserted `callerAgentSubject`
+ * (`mandate_agent_subject_mismatch`, or `caller_subject_required` when the call
+ * omits it). The other enforced axes are principal, tenant, unit, and the
+ * mandate's remaining budget.
  */
 export const mint = mutation({
   args: {
@@ -324,6 +336,15 @@ export const get = query({
   }
 });
 
+/**
+ * A principal's mandates. `limit` is clamped to [1, 200].
+ *
+ * PRINCIPAL-SCOPED, NOT ORG-SCOPED: `by_principal` carries no orgCode, so this
+ * spans every org the principal holds mandates in — unlike the spend path, where
+ * `usage.record` rejects a mandate from another tenant (`mandate_tenant_mismatch`).
+ * The mandates table has NO org index, so there is no per-org read to fall back
+ * on: an org-scoped view must filter `orgCode` in the app after reading.
+ */
 export const listForPrincipal = query({
   args: {
     principalType: principalTypeValidator,
@@ -344,6 +365,12 @@ export const listForPrincipal = query({
   }
 });
 
+/**
+ * Every mandate minted for one agent, across all principals and orgs. `limit` is
+ * clamped to [1, 200]. AGENT-SCOPED ONLY — the same caveat as
+ * `listForPrincipal`: no orgCode, no org index, so filter in the app for a
+ * tenant-scoped view.
+ */
 export const listForAgent = query({
   args: {agentSubject: v.string(), limit: v.optional(v.number())},
   returns: v.array(mandateDoc),

@@ -141,6 +141,13 @@ export const get = query({
   }
 });
 
+/**
+ * A principal's ingested webhook events, newest first, optionally filtered by
+ * `eventType`. `limit` is clamped to [1, 200]. PRINCIPAL-SCOPED, NOT ORG-SCOPED:
+ * `by_principal` carries no orgCode, so this spans every org the principal
+ * belongs to. Prefer it over `listRecent` for per-principal reads, but filter in
+ * the app if a view must be tenant-scoped.
+ */
 export const listForPrincipal = query({
   args: {
     principalType: principalTypeValidator,
@@ -176,6 +183,18 @@ export const listForPrincipal = query({
   }
 });
 
+/**
+ * Recent webhook events across the WHOLE DEPLOYMENT, newest first, optionally
+ * filtered by `eventType`. `limit` is clamped to [1, 200].
+ *
+ * DEPLOYMENT-WIDE BY DESIGN: unlike `listForPrincipal`, this takes no principal
+ * and no orgCode, so it spans every tenant — it exists for operator/cross-app
+ * views. It is therefore safe ONLY behind a verified caller. `registerRoutes`
+ * mounts its `POST /events/recent` reader only when `verifyCaller` is supplied,
+ * so the route fails closed by not existing at all; any other exposure must
+ * clear the same bar. NEVER wire this to an unauthenticated public query — that
+ * hands every tenant's billing events to any caller.
+ */
 export const listRecent = query({
   args: {
     eventType: v.optional(v.string()),
